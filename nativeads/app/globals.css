@@ -46,9 +46,13 @@
   border-color: var(--color-line);
 }
 
+/* Only html carries the page colour (the canvas). Body stays transparent so the
+   fixed -z-10 backdrop layers — speckle + confetti — show through behind content. */
+html {
+  background-color: var(--color-ink);
+}
 html,
 body {
-  background-color: var(--color-ink);
   color: var(--color-chalk);
 }
 

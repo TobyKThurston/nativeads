@@ -14,15 +14,18 @@ type Sprinkle = { shape: ShapeName; x: string; y: string; c: string; s: number; 
 
 // Hand-placed so the scatter feels designed, not random. Brand-pop palette.
 const FIELD: Sprinkle[] = [
-  { shape: "plus", x: "8%", y: "22%", c: "var(--color-coral)", s: 20, spin: -12, delay: 0 },
-  { shape: "squiggle", x: "16%", y: "68%", c: "var(--color-sky)", s: 26, spin: 8, delay: 0.6 },
-  { shape: "dot", x: "5%", y: "48%", c: "var(--color-sun)", s: 12, spin: 0, delay: 1.1 },
-  { shape: "cross", x: "12%", y: "88%", c: "var(--color-leaf)", s: 16, spin: 14, delay: 0.3 },
-  { shape: "spark", x: "90%", y: "18%", c: "var(--color-grape)", s: 22, spin: -6, delay: 0.9 },
-  { shape: "ring", x: "94%", y: "54%", c: "var(--color-cherry)", s: 18, spin: 0, delay: 1.4 },
-  { shape: "plus", x: "86%", y: "82%", c: "var(--color-sun)", s: 18, spin: 10, delay: 0.5 },
-  { shape: "squiggle", x: "95%", y: "88%", c: "var(--color-leaf)", s: 24, spin: -10, delay: 1.2 },
-  { shape: "dot", x: "82%", y: "40%", c: "var(--color-coral)", s: 11, spin: 0, delay: 0.2 },
+  { shape: "plus", x: "7%", y: "20%", c: "var(--color-coral)", s: 28, spin: -12, delay: 0 },
+  { shape: "squiggle", x: "15%", y: "64%", c: "var(--color-sky)", s: 34, spin: 8, delay: 0.6 },
+  { shape: "dot", x: "4%", y: "44%", c: "var(--color-sun)", s: 17, spin: 0, delay: 1.1 },
+  { shape: "cross", x: "11%", y: "86%", c: "var(--color-leaf)", s: 22, spin: 14, delay: 0.3 },
+  { shape: "spark", x: "22%", y: "30%", c: "var(--color-grape)", s: 24, spin: -6, delay: 0.4 },
+  { shape: "ring", x: "26%", y: "82%", c: "var(--color-cherry)", s: 22, spin: 0, delay: 1.0 },
+  { shape: "spark", x: "91%", y: "16%", c: "var(--color-grape)", s: 28, spin: -6, delay: 0.9 },
+  { shape: "ring", x: "95%", y: "50%", c: "var(--color-cherry)", s: 24, spin: 0, delay: 1.4 },
+  { shape: "plus", x: "85%", y: "80%", c: "var(--color-sun)", s: 26, spin: 10, delay: 0.5 },
+  { shape: "squiggle", x: "78%", y: "28%", c: "var(--color-leaf)", s: 32, spin: -10, delay: 1.2 },
+  { shape: "dot", x: "82%", y: "62%", c: "var(--color-coral)", s: 16, spin: 0, delay: 0.2 },
+  { shape: "cross", x: "73%", y: "90%", c: "var(--color-sky)", s: 22, spin: 12, delay: 0.7 },
 ];
 
 /** A scattered confetti field. Pass extra classes (e.g. z-index / opacity). */
