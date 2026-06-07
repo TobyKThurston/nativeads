@@ -7,17 +7,31 @@ import { fmtTime as fmt, type AnalysisResult } from "@/lib/analyze";
 import { youtubeEmbed } from "@/lib/youtube";
 import { useGeneration, type JobState } from "@/lib/useGeneration";
 import { STYLES, inferStyle, type StyleId } from "@/lib/style";
-import type { GenerationSpec } from "@/lib/generation";
+import type { GenerationSpec, ReferenceImage } from "@/lib/generation";
 import type { SavedClip } from "@/lib/store";
+import { resolveBrandFile, resolveStyleFile } from "@/lib/designClient";
 
 /** Generated clip length, in seconds — the window the native ad splices into. */
 const AD_LEN = 5 as const;
 
 /**
- * Which cuts actually generate, by 0-based index. TESTING: only cut 1 (`[0]`)
- * to save Kling credits/time. Set to `[0, 1, 2]` or `null` to generate all.
+ * ⚠ COST GATE — which cuts actually generate, by 0-based index.
+ *
+ * Each generated cut is now a full pipeline: (0–1) style-file gen + 1 brand-file
+ * gen (Nano Banana) + 1 video gen (Veo/Kling). With 3 brands that's up to
+ * 1 + 3 + 3 paid calls PER video. Default is ALL THREE cuts so a demo never
+ * silently ships one — set NEXT_PUBLIC_GENERATE_CUTS to throttle for cheap dev:
+ *   unset/empty → all three   |   "0" → first cut only   |   "0,1,2" → all
  */
-const GENERATE_CUTS: number[] | null = [0];
+function parseGenerateCuts(raw: string | undefined): number[] | null {
+  if (raw == null || raw.trim() === "") return null; // null = generate all
+  const nums = raw
+    .split(",")
+    .map((s) => parseInt(s.trim(), 10))
+    .filter((n) => Number.isInteger(n) && n >= 0);
+  return nums.length ? nums : null;
+}
+const GENERATE_CUTS: number[] | null = parseGenerateCuts(process.env.NEXT_PUBLIC_GENERATE_CUTS);
 
 export function Previews({
   source,
@@ -107,25 +121,42 @@ export function Previews({
   }, [brands, jobs, savedClips, styleId, onSave]);
 
   const runGeneration = useCallback(() => {
-    brands.forEach((b, i) => {
-      if (GENERATE_CUTS && !GENERATE_CUTS.includes(i)) return; // testing: limit which cuts render
-      const spec: GenerationSpec = {
-        brand: b,
-        surface: { id: surface.id, label: surface.label, x: surface.x, y: surface.y, w: surface.w, h: surface.h },
-        styleId,
-        // The captured moment is BOTH first and last frame — the splice points.
-        // It must stay the *real* source frame (never a composited product) so the
-        // clip loops seamlessly back into the original footage. The brand is fed to
-        // Kling via the prompt + scene context instead (see buildPrompt).
-        frame: analysis.frame.url,
-        timestamp: startAt,
-        durationSec: AD_LEN,
-        sceneContext: analysis.scene, // GPT's description of what's actually in the video
-      };
-      generate(b.id, spec);
-    });
     setSaved(false); // a fresh render means there's something new to save
-  }, [brands, surface, styleId, analysis.frame.url, analysis.scene, startAt, generate]);
+    void (async () => {
+      // Resolve the per-video style file ONCE and share it across all three brand
+      // cuts (§2). null for native footage or when image-gen is off.
+      const styleRef = await resolveStyleFile({ frame: analysis.frame.url, styleId });
+      await Promise.all(
+        brands.map(async (b, i) => {
+          if (GENERATE_CUTS && !GENERATE_CUTS.includes(i)) return; // cost gate: limit which cuts render
+          // Per-brand product reference (cache-or-generate). null → text-only.
+          const brandRef = await resolveBrandFile({
+            frame: analysis.frame.url,
+            brand: b,
+            styleId,
+            transcript: analysis.transcript,
+          });
+          const referenceImages = [brandRef, styleRef].filter(Boolean) as ReferenceImage[];
+          const spec: GenerationSpec = {
+            brand: b,
+            surface: { id: surface.id, label: surface.label, x: surface.x, y: surface.y, w: surface.w, h: surface.h },
+            styleId,
+            // The captured moment is BOTH first and last frame — the splice points.
+            // It stays the *real* source frame (never a composited product) so the
+            // clip loops seamlessly back into the source. The product enters via
+            // referenceImages (design files) + the authored prompt instead.
+            frame: analysis.frame.url,
+            timestamp: startAt,
+            durationSec: AD_LEN,
+            sceneContext: analysis.scene, // GPT's description of what's actually in the video
+            transcriptContext: analysis.transcript, // §3 Whisper seam (no-op until populated)
+            referenceImages: referenceImages.length ? referenceImages : undefined,
+          };
+          generate(b.id, spec);
+        })
+      );
+    })();
+  }, [brands, surface, styleId, analysis.frame.url, analysis.scene, analysis.transcript, startAt, generate]);
 
   // ---- transport handlers (act on the single hero player) ----
   function toggle() {
