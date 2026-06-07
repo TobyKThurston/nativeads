@@ -1,11 +1,15 @@
 /**
- * GPT-authored Kling prompts — SERVER ONLY (reads OPENAI_API_KEY).
+ * GPT-authored video prompts — SERVER ONLY (reads OPENAI_API_KEY).
  *
  * Instead of a fixed template, we hand GPT the actual start/last frame (they're
- * the same screenshot) and have it WRITE the Kling image2video prompt, tailored
- * to what's really in the shot and its visual medium. That's what makes the ad
+ * the same screenshot) and have it WRITE the image2video prompt, tailored to
+ * what's really in the shot and its visual medium. That's what makes the ad
  * native: in a Minecraft clip GPT will say "a Coca-Cola bottle built from voxel
  * blocks is revealed as the camera eases left," not a generic photoreal bottle.
+ *
+ * When a brand design file is available (§2), GPT also SEES it as a second image
+ * and is told the inserted product must match it exactly (§6c). Optional
+ * transcript context (§3) grounds the moment.
  *
  * Same OpenAI Responses API + json_schema pattern as app/api/analyze. Returns
  * null on any failure so the caller falls back to the buildPrompt template.
@@ -13,7 +17,7 @@
 
 import type { Brand } from "./types";
 import { styleById, type StyleId } from "./style";
-import { surfacePhrase, type GenSurface } from "./generation";
+import { surfacePhrase, type GenSurface, type ReferenceImage } from "./generation";
 
 export function isOpenAiConfigured(): boolean {
   return Boolean(process.env.OPENAI_API_KEY);
@@ -49,6 +53,14 @@ captions/subtitles/overlays/watermark, warping, morphing, flicker, scene change,
 
 Return JSON: { "prompt": string, "negative_prompt": string }.`;
 
+/** Appended to SYSTEM only when a brand design file is attached as image #2 (§6c). */
+const BRAND_REF_SYSTEM = `
+You are also given a BRAND REFERENCE IMAGE (the second image): a clean render of
+the exact product to insert, with the correct logo and colors. The product that
+appears in the middle of the clip MUST match that reference image — same product,
+same logo, same materials, same medium. Do not redesign it. Keep it at realistic
+scale; it must not fill or dominate the frame.`;
+
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -66,10 +78,14 @@ export type AuthorArgs = {
   surface: GenSurface;
   scene?: string;
   durationSec: number;
+  /** design files (§2); the brand file, when present, is shown to GPT as image #2 */
+  referenceImages?: ReferenceImage[];
+  /** windowed dialogue/context near the moment (§3) */
+  transcript?: string;
 };
 
-/** Ask GPT to write the Kling prompt for this frame + brand. Null → caller uses the template. */
-export async function authorKlingPrompt(
+/** Ask GPT to write the video prompt for this frame + brand. Null → caller uses the template. */
+export async function authorVideoPrompt(
   args: AuthorArgs
 ): Promise<{ prompt: string; negative_prompt: string } | null> {
   const key = process.env.OPENAI_API_KEY;
@@ -77,6 +93,8 @@ export async function authorKlingPrompt(
   const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
   const style = styleById(args.styleId);
   const { brand } = args;
+  const brandRef = args.referenceImages?.find((r) => r.kind === "brand")?.url;
+  const transcript = args.transcript?.trim();
 
   // Structured facts for GPT; the medium is primarily read from the image, with this as a hint.
   const facts = [
@@ -86,11 +104,24 @@ export async function authorKlingPrompt(
     `Brand colors: ${brand.name}'s signature colors (accent ${brand.color})`,
     `Suggested placement: ${surfacePhrase(args.surface)}`,
     args.scene ? `Scene (detected): ${args.scene}` : null,
+    transcript ? `Spoken context near this moment: "${transcript}". Use it to make the placement feel motivated and native, but never add captions or subtitles.` : null,
     `Visual medium hint (operator-selected, defer to the image if it disagrees): ${style.label} — ${style.sceneDescriptor}; product rendered ${style.productClause}`,
     `Clip length: ${args.durationSec}s`,
   ]
     .filter(Boolean)
     .join("\n");
+
+  // Image #1 is always the source frame; image #2 (when present) is the brand
+  // design file GPT must match. SYSTEM gets the §6c instruction only when so.
+  const content: Array<Record<string, unknown>> = [
+    {
+      type: "input_text",
+      text: `Write the video prompt for this native ad. This frame is BOTH the first and last frame.\n\n${facts}`,
+    },
+    { type: "input_image", image_url: args.image },
+  ];
+  if (brandRef) content.push({ type: "input_image", image_url: brandRef });
+  const system = brandRef ? `${SYSTEM}\n${BRAND_REF_SYSTEM}` : SYSTEM;
 
   try {
     const r = await fetch("https://api.openai.com/v1/responses", {
@@ -99,19 +130,10 @@ export async function authorKlingPrompt(
       body: JSON.stringify({
         model,
         input: [
-          { role: "system", content: SYSTEM },
-          {
-            role: "user",
-            content: [
-              {
-                type: "input_text",
-                text: `Write the Kling prompt for this native ad. This frame is BOTH the first and last frame.\n\n${facts}`,
-              },
-              { type: "input_image", image_url: args.image },
-            ],
-          },
+          { role: "system", content: system },
+          { role: "user", content },
         ],
-        text: { format: { type: "json_schema", name: "kling_prompt", schema: SCHEMA, strict: true } },
+        text: { format: { type: "json_schema", name: "video_prompt", schema: SCHEMA, strict: true } },
       }),
     });
 
@@ -131,3 +153,6 @@ export async function authorKlingPrompt(
     return null;
   }
 }
+
+/** @deprecated Back-compat alias for {@link authorVideoPrompt}. */
+export const authorKlingPrompt = authorVideoPrompt;

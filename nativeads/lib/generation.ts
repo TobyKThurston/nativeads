@@ -125,6 +125,12 @@ export type GenerationJob = {
   message?: string;
   /** redacted echo of the provider request, for the UI inspector */
   request?: KlingRequest | VeoRequest;
+  /**
+   * Design files the server generated for this job (brand, optional style), so
+   * the client can cache them (store.ts) and reuse across branches/regens. Only
+   * set when the server generated them; omitted when the client supplied refs. §5
+   */
+  designFiles?: ReferenceImage[];
 };
 
 /**

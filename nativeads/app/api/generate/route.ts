@@ -13,6 +13,7 @@ import {
   statusProgress,
   type GenerationJob,
   type GenerationSpec,
+  type ReferenceImage,
 } from "@/lib/generation";
 import {
   createImage2Video,
@@ -21,8 +22,13 @@ import {
   KlingApiError,
 } from "@/lib/providers/kling";
 import { createVideo, isVeoConfigured, VeoApiError } from "@/lib/providers/veo";
+import {
+  generateBrandFile,
+  generateStyleFile,
+  isImageConfigured,
+} from "@/lib/providers/nanobanana";
 import { videoProvider, VEO_MODEL } from "@/lib/config";
-import { authorKlingPrompt } from "@/lib/promptAuthor";
+import { authorVideoPrompt } from "@/lib/promptAuthor";
 
 export const runtime = "nodejs"; // node:crypto for JWT signing
 export const dynamic = "force-dynamic";
@@ -62,16 +68,45 @@ export async function POST(request: Request) {
   }
   if (!isValidSpec(spec)) return badRequest("invalid generation spec");
 
-  // Have GPT look at the frame and author a Kling prompt native to THIS scene
-  // (medium-matched, grounded in what's visible). Null on no-key/error → the
-  // buildKlingRequest call falls back to the static buildPrompt template.
-  const authored = await authorKlingPrompt({
+  // Resolve design files (§2/§5): prefer client-supplied refs (cache hit, zero
+  // cost), else generate via Nano Banana — brand file always, style file only on
+  // non-native footage. Files we generate here are returned on the job so the
+  // client can cache + reuse them across branches/regens. None → text-only.
+  let referenceImages: ReferenceImage[] = spec.referenceImages ?? [];
+  let generatedDesignFiles: ReferenceImage[] | undefined;
+  if (referenceImages.length === 0 && isImageConfigured()) {
+    const refs: ReferenceImage[] = [];
+    const brandFile = await generateBrandFile({
+      frame: spec.frame,
+      brand: spec.brand,
+      styleId: spec.styleId,
+      scene: spec.sceneContext,
+      transcript: spec.transcriptContext,
+    });
+    if (brandFile) refs.push({ kind: "brand", url: brandFile });
+    if (spec.styleId !== "native") {
+      const styleFile = await generateStyleFile({ frame: spec.frame, styleId: spec.styleId });
+      if (styleFile) refs.push({ kind: "style", url: styleFile });
+    }
+    if (refs.length) {
+      referenceImages = refs;
+      generatedDesignFiles = refs;
+    }
+  }
+  const specWithRefs: GenerationSpec = { ...spec, referenceImages };
+
+  // Have GPT look at the frame (+ the brand design file, when present) and author
+  // a video prompt native to THIS scene. Null on no-key/error → the build*Request
+  // call falls back to the static buildPrompt template.
+  const authored = await authorVideoPrompt({
     image: spec.frame,
     brand: spec.brand,
     styleId: spec.styleId,
     surface: spec.surface,
     scene: spec.sceneContext,
     durationSec: spec.durationSec,
+    referenceImages,
+    transcript: spec.transcriptContext,
   });
 
   // Choose the video provider: honor VIDEO_PROVIDER, then fall back to whichever
@@ -84,7 +119,7 @@ export async function POST(request: Request) {
 
   // ── Veo (default) ──
   if (useVeo) {
-    const veoReq = buildVeoRequest(spec, { model: VEO_MODEL, ...(authored ?? {}) });
+    const veoReq = buildVeoRequest(specWithRefs, { model: VEO_MODEL, ...(authored ?? {}) });
     try {
       const { taskId, status } = await createVideo(veoReq);
       const job: GenerationJob = {
@@ -94,6 +129,7 @@ export async function POST(request: Request) {
         progress: statusProgress(status),
         videoUrl: null,
         request: redactVeoRequest(veoReq),
+        designFiles: generatedDesignFiles,
       };
       return Response.json({ job });
     } catch (err) {
@@ -103,10 +139,11 @@ export async function POST(request: Request) {
     }
   }
 
-  // ── Kling (fallback) ──
+  // ── Kling (fallback) ── note: Kling is text+frame only; it ignores design
+  // files, so the product reference rides in the authored prompt for this path.
   if (useKling) {
     const cfg = klingConfig();
-    const klingReq = buildKlingRequest(spec, {
+    const klingReq = buildKlingRequest(specWithRefs, {
       model_name: cfg.model,
       mode: cfg.mode,
       cfg_scale: cfg.cfgScale,
@@ -121,6 +158,7 @@ export async function POST(request: Request) {
         progress: statusProgress(status),
         videoUrl: null,
         request: redactKlingRequest(klingReq),
+        designFiles: generatedDesignFiles,
       };
       return Response.json({ job });
     } catch (err) {
@@ -133,7 +171,9 @@ export async function POST(request: Request) {
   // ── Mock: no provider configured — simulate a job whose progress derives
   // purely from elapsed time. Echo the would-be (default-provider) request.
   const simMs = 8000 + spec.durationSec * 600;
-  const mockReq = redactVeoRequest(buildVeoRequest(spec, { model: VEO_MODEL, ...(authored ?? {}) }));
+  const mockReq = redactVeoRequest(
+    buildVeoRequest(specWithRefs, { model: VEO_MODEL, ...(authored ?? {}) })
+  );
   const job: GenerationJob = {
     id: `mock:${mockToken(simMs)}`,
     provider: "mock",
@@ -142,6 +182,7 @@ export async function POST(request: Request) {
     videoUrl: null,
     message: "No video provider configured — simulating. Showing composited preview.",
     request: mockReq,
+    designFiles: generatedDesignFiles,
   };
   return Response.json({ job });
 }
