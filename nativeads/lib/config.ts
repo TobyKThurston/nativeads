@@ -21,11 +21,11 @@
 
 /* ----------------------------------------------------------------- image (NB) */
 
-/** Nano Banana model id. Default: Pro (logo/text fidelity); NB2 for speed. */
+/**
+ * Nano Banana model id. Default: Pro (logo/text fidelity). Swap to NB2 for speed
+ * via IMAGE_MODEL=gemini-3.1-flash-image-preview (see .env.example).
+ */
 export const IMAGE_MODEL = process.env.IMAGE_MODEL || "gemini-3-pro-image-preview";
-
-/** Faster Nano Banana 2 id, for reference / quick swaps. */
-export const IMAGE_MODEL_FAST = "gemini-3.1-flash-image-preview";
 
 /** Gemini REST base (shared by Nano Banana + Veo). */
 export const GEMINI_BASE_URL = (
