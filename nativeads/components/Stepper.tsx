@@ -7,7 +7,6 @@ const FLOW: { id: Step; label: string }[] = [
   { id: "analyzing", label: "Scan" },
   { id: "detection", label: "Spot" },
   { id: "brands", label: "Brands" },
-  { id: "branching", label: "Branch" },
   { id: "previews", label: "Render" },
 ];
 

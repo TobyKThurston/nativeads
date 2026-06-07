@@ -1,5 +1,23 @@
 import { buildResult, type AnalysisResult, type Capture, type ScoredSurface } from "./analyze";
 
+// Both scanning calls hit the network (yt-dlp+ffmpeg, then GPT vision) and have
+// a long, unpredictable tail. We cap each one so the step stays snappy: on a
+// timeout we abort the request and fall back to the fast path (thumbnail /
+// local heuristic) instead of letting the user wait the server's full 60s.
+const FRAME_TIMEOUT_MS = 8000; // yt-dlp+ffmpeg → thumbnail fallback
+const ANALYZE_TIMEOUT_MS = 12000; // GPT vision → local heuristic fallback
+
+/** fetch() that aborts itself after `ms`, so a slow tail can't stall the UI. */
+async function fetchWithTimeout(input: string, init: RequestInit, ms: number): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(input, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Pull a REAL frame from a YouTube video at a random point via the server route
  * (yt-dlp + ffmpeg). Returns a Capture (same shape as an uploaded-file frame),
@@ -7,11 +25,15 @@ import { buildResult, type AnalysisResult, type Capture, type ScoredSurface } fr
  */
 export async function fetchYouTubeFrame(id: string): Promise<Capture | null> {
   try {
-    const r = await fetch("/api/frame", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
-    });
+    const r = await fetchWithTimeout(
+      "/api/frame",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      },
+      FRAME_TIMEOUT_MS
+    );
     const d = (await r.json()) as { ok: boolean; image?: string; t?: number; duration?: number };
     if (!d.ok || !d.image) return null;
     const aspect = await imageAspect(d.image).catch(() => 16 / 9);
@@ -40,11 +62,15 @@ export async function requestGptDetection(
   ctx: { timestamp: number; duration: number; aspect: number }
 ): Promise<AnalysisResult | null> {
   try {
-    const r = await fetch("/api/analyze", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image }),
-    });
+    const r = await fetchWithTimeout(
+      "/api/analyze",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image }),
+      },
+      ANALYZE_TIMEOUT_MS
+    );
     const data = (await r.json()) as
       | { ok: true; surfaces: ScoredSurface[]; model?: string; rationale?: string; scene?: string }
       | { ok: false; reason?: string };

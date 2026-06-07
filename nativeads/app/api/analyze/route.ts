@@ -72,7 +72,11 @@ export async function POST(req: Request) {
     return Response.json({ ok: false, reason: "no_image" }, { status: 400 });
   }
 
-  const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
+  // Decoupled from OPENAI_MODEL (the prompt-author's model). Surface detection is a
+  // fast structured-vision task, so use gpt-4o here, NOT the slow gpt-5.5 reasoning
+  // model - gpt-5.5 takes ~20s on a busy frame and blows past the 12s client timeout
+  // in detect.ts, which silently drops us to the local heuristic.
+  const model = process.env.OPENAI_ANALYZE_MODEL || "gpt-4o";
 
   try {
     const r = await fetch("https://api.openai.com/v1/responses", {

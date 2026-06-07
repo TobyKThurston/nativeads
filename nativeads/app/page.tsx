@@ -9,7 +9,6 @@ import { Landing } from "@/components/Landing";
 import { Analyzing } from "@/components/Analyzing";
 import { Detection } from "@/components/Detection";
 import { BrandPicker } from "@/components/BrandPicker";
-import { Branching } from "@/components/Branching";
 import { Previews } from "@/components/Previews";
 import { Gallery } from "@/components/Gallery";
 import { brandById } from "@/lib/brands";
@@ -190,11 +189,7 @@ export default function Home() {
             )}
 
             {view === "create" && step === "brands" && (
-              <BrandPicker selected={selected} setSelected={setSelected} onNext={() => setStep("branching")} />
-            )}
-
-            {view === "create" && step === "branching" && analysis && (
-              <Branching frame={analysis.frame} timestamp={analysis.timestamp} brands={brands} onNext={() => setStep("previews")} />
+              <BrandPicker selected={selected} setSelected={setSelected} onNext={() => setStep("previews")} />
             )}
 
             {view === "create" && step === "previews" && source && analysis && (

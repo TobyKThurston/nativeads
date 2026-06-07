@@ -125,30 +125,31 @@ export function buildPrompt(spec: GenerationSpec): { prompt: string; negative_pr
     scene ? `The scene: ${scene}.` : `Scene: ${style.sceneDescriptor}.`,
     // the hard frame constraint - clean at both ends
     `The clip begins and ends on the exact same given frame: the real scene with NO ${brand.name} product visible at the very first or very last frame.`,
-    // the arc - product appears fast and holds for most of the short clip to maximize brand on-screen time
-    `Only in between, ${brand.product} appears quickly and blends into the scene naturally ${placement} - ${style.productClause} - as if it had always belonged there,`,
-    `holding clear and legible for most of the clip, then easing back out only in the final moment so the final frame returns to the original scene exactly.`,
-    // scale + branding
-    `Realistic scale: it sits within the scene and never fills or dominates the frame.`,
-    `${brand.name}'s branding stays clear and legible: ${brand.logo}, in ${brand.name}'s signature colors.`,
-    // integration - the camera may move expressively, but as a CLOSED LOOP that resolves to the opening framing
-    `The camera is free to move with intent - a slow push-in, gentle orbit or parallax drift that introduces the product - but it travels back to the exact opening framing by the end, with no residual zoom or leftover drift, so the shot resolves on the original frame.`,
-    `Match the scene's lighting, lens and art style; keep the motion smooth and motivated, no hard cut or transition, the surrounding scene stays consistent, so it loops seamlessly back into the source footage.`,
+    // the reveal - one continuous, fluid camera move discovers the brand; no pop-up, no static-then-animate
+    `The camera is already gliding as the shot opens and smoothly looks across the scene to reveal ${brand.product} - or a big, clean version of ${brand.name}'s iconic mark - already integrated into the world ${placement}, ${style.productClause},`,
+    `holding it clearly in view for a beat in the middle, then easing back to the exact opening framing so the final frame returns to the original scene exactly.`,
+    // scale + branding (favor the clean icon, never spelled-out text)
+    `When revealed it is big and clearly the subject, in ${brand.name}'s signature colors - its iconic symbol clean and recognizable, with no spelled-out text.`,
+    // integration - continuous fluid motion, CLOSED LOOP, non-invasive
+    `Continuous, fluid motion the entire time - never a frozen hold that then starts, nothing popping or spawning in the center; the brand is discovered by looking, not dropped on top of the scene.`,
+    `Match the scene's lighting, lens and art style; keep it calm and non-invasive, no hard cut or transition, the surrounding scene stays consistent, so it loops seamlessly back into the source footage.`,
   ].join(" ");
 
   const negative_prompt =
-    // motion failure mode - movement is welcome, but it MUST resolve back to the opening frame (this is the "weird zoom" fix)
+    // NO rendered text - generated lettering comes out garbled
+    "text, words, letters, caption, subtitle, signage text, gibberish text, garbled text, on-screen text overlay, ui text, watermark, " +
+    // motion failure mode - continuous fluid motion that resolves back to the opening frame
+    "static frozen opening frame, held frame then sudden motion, motion starting late, stutter, " +
+    "object popping in, spawning, materializing in center, " +
     "camera ending on a different framing, mismatched first and last frame, residual zoom, leftover camera drift, " +
     "jarring camera motion, shaky handheld, camera shake, " +
-    // intrusive overlays that break the native illusion (but NOT the product's own logo)
-    "floating caption, subtitle, on-screen text overlay, ui overlay, watermark, " +
     // brand-fidelity guards
-    "misspelled brand name, garbled lettering, distorted logo, wrong logo, wrong brand colors, motion-blurred logo, illegible logo, " +
+    "distorted logo, wrong logo, wrong brand colors, motion-blurred logo, garbled logo, " +
     "generic unbranded product, off-brand knockoff, " +
     // scale / framing failure mode
-    "oversized product, product filling the frame, product covering the background, product lingering at the end, " +
+    "oversized logo, logo filling the frame, brand lingering at the end, " +
     // general quality
-    "extra objects, duplicated product, warping, morphing artifacts, flicker, abrupt cut, jump cut, scene change, distorted hands, lowres";
+    "extra objects, warping, morphing artifacts, flicker, abrupt cut, jump cut, scene change, distorted hands, lowres";
 
   return { prompt, negative_prompt };
 }

@@ -1,13 +1,13 @@
 /**
  * GPT-authored Kling prompts - SERVER ONLY (reads OPENAI_API_KEY).
  *
- * Instead of a fixed template, we hand GPT the actual start/last frame (they're
- * the same screenshot) and a creative-director brief: invent the most memorable,
- * on-brand moment that could happen in THIS shot, then write the Kling
- * image2video prompt for it. Feeding the brand's category + tagline gives it the
- * vibe to riff on, so it builds a little world around the product (a character
- * using it, the brand's color washing the scene) instead of just parking the
- * product on a surface - all rendered native to the frame's visual medium.
+ * Instead of a fixed template, we hand GPT (a vision model) the actual start/last
+ * frame (they're the same screenshot) and a creative-director brief: analyze the
+ * real scene, then reveal a brand element that feels native to that world - one
+ * that could believably have been there all along, in view or just outside the
+ * opening framing - "discovered" by one continuous camera move rather than
+ * overlaid, floating, popped in, or rendered as text. Output is the Kling
+ * image2video prompt + negatives for that move, in the frame's native medium.
  *
  * Same OpenAI Responses API + json_schema pattern as app/api/analyze. Returns
  * null on any failure so the caller falls back to the buildPrompt template.
@@ -21,72 +21,119 @@ export function isOpenAiConfigured(): boolean {
   return Boolean(process.env.OPENAI_API_KEY);
 }
 
-const SYSTEM = `You are a CREATIVE DIRECTOR writing prompts for Kling, an image-to-video model. You
-design NATIVE in-video brand moments - the kind of placement that feels like a beat the creator shot
-on purpose, not an ad bolted on.
+const SYSTEM = `You are a CREATIVE DIRECTOR designing native in-video brand moments for an image-to-video model.
 
-You are given ONE video frame. It is used as BOTH the first and last frame of a short clip
-(image == image_tail), so the clip MUST begin and end on this exact frame, unchanged, and loop
-seamlessly back into the original video. The brand moment therefore lives entirely in the MIDDLE of
-the clip: the very first and very last frame are the untouched original scene, with no brand element
-yet visible.
+You are given a single image.
 
-YOUR JOB - put the PRODUCT on screen, unmissably. The entire point of this clip is the ad. The actual
-named product (see "Hero product to feature" below) MUST be clearly, recognizably RENDERED and be the
-visible SUBJECT of the shot - the thing the eye goes straight to. If a viewer paused mid-clip and
-couldn't instantly name the brand from the product on screen, the clip has FAILED. Nothing else
-matters as much as this.
+This image is both the beginning and ending frame of a short generated clip. The generated sequence must return naturally to this exact view so it can blend seamlessly back into the original video.
 
-Your creativity goes into HOW the real product shows up and gets used - NEVER into whether it appears:
-- Reveal it naturally for THIS scene and let it be USED, not just sat there: a character reaches for
-  it and uses it, it powers or reacts to the action already happening in the shot, someone enjoys it.
-- Make it read like a real commercial: at the hero beat the product turns so its LOGO faces camera and
-  is unmistakable, and where the scene allows, a character actually uses / drinks / wears / holds it -
-  the kind of clean product moment you'd see in an actual ad.
-- Give it a believable reason to be here that fits the brand's vibe - read the category + tagline for
-  TONE (joyful and shared, kinetic and bold, clean and magical, live and electric) and make the
-  product's moment feel unmistakably like THAT brand.
-- Render the product, and anything around it, in the scene's EXACT visual medium and art style -
-  Minecraft -> blocky voxels, anime -> cel-shaded, live-action -> photoreal. Never mix mediums.
-- DO NOT substitute the product with abstract brand vibes - a color wash over the scene, a logo
-  glowing in the air, ambient particles, the scene merely "feeling" like the brand. That is NOT an
-  ad. The physical product itself must be in frame, rendered, and recognizable.
-Be specific to THIS frame, but the product is always literally there - it is the subject, not a hint.
+Your goal is to create a brand moment that feels completely native to the world shown in the image.
 
-NON-NEGOTIABLE guardrails (the idea is yours; these are fixed):
-- CLOSED LOOP. The camera may move expressively - a push-in, gentle orbit, parallax or crane (scale
-  the size of the move to the clip length, per the pacing rule below) -
-  but whatever it does, it returns to the EXACT opening framing by the end (same position, angle,
-  focal length), and whatever you introduced is gone again, so the final frame equals the first with
-  zero net change. Think "there and back," not "A to B." This is what lets it move freely AND splice
-  seamlessly back into the source footage.
-- PRODUCT PRESENT & LEGIBLE. The named hero product is actually rendered and recognizable, with its
-  logo reading clearly and correctly in the brand's colors, held steady (not motion-blurred) the whole
-  time it's on screen. This IS the shot - it is non-negotiable, not a background detail.
-- PROMINENT, FOCAL SCALE. The product is the focal subject - big and central enough to read at a
-  glance and clearly be what the shot is about - while still sitting believably in the scene. Not a
-  tiny prop lost in the background; not absurdly oversized or clipping out of frame.
-- NATIVE, not an overlay. No captions, subtitles, UI, or watermark text. No hard cut or scene change;
-  the surrounding world stays consistent and keeps behaving naturally.
-- SHORT CLIP - MAXIMIZE BRAND TIME. The clip is very short (see Clip length below; often just 5s), so
-  commit to ONE simple idea - no multi-step action a few seconds can't land. Get the product on screen
-  FAST (within the first ~0.5-1s) and KEEP it there, clear and legible, for as much of the clip as
-  possible; it should only clear in the final moment so the last frame is the clean plate again. The
-  empty original scene is just the first and last instant - NOT half the clip spent moving in and out.
-  On a 5s clip favor a simple move (a gentle push-in or slight drift) so the product can hold legible
-  through the whole middle; save bigger sweeps or a full 360 for a 10s clip. Brand on-screen time is
-  the goal - longer and legible beats shorter and flashy.
+The viewer should feel that the brand belongs in this environment and that the camera simply happened to discover it.
 
-Write 2-4 vivid, concrete sentences that read like a strong shot description: state the creative
-idea, the SPECIFIC camera move, and how the brand moment plays out and resolves home. Do not use
-"first frame"/"last frame" jargon - express it as a move that begins and ends on the resting scene.
+Before writing the shot description, carefully analyze the image:
 
-Also write negative_prompt: a comma-separated list guarding against a camera move that fails to
-return (ending on a different framing, mismatched first and last frame, residual zoom, leftover
-camera drift), jarring or shaky handheld motion, hard cut, jump cut, scene change, the product
-lingering or still present at the end, oversized or frame-filling product, motion-blurred or
-illegible logo, garbled/misspelled/wrong/distorted logo, wrong brand colors, generic unbranded
-product, captions/subtitles/overlays/watermark, warping, morphing, flicker, lowres.
+* What kind of world is this?
+* What visual style does it use?
+* What objects, surfaces, structures, materials, landmarks, props, architecture, scenery, or environmental opportunities exist?
+* What would naturally exist just outside the current framing?
+
+The brand placement should feel authentic to this specific scene.
+
+The brand may be represented as:
+
+* the actual product
+* a recognizable branded object
+* the brand's iconic visual symbol
+* a branded environmental element
+
+The brand does not need to already exist in the visible frame.
+
+However, it must feel like a believable extension of the world shown in the image.
+
+The viewer should believe that if the camera had naturally looked in that direction, the branded element could genuinely have been there all along.
+
+Avoid anything that feels:
+
+* overlaid
+* pasted on
+* composited
+* floating
+* intrusive
+* artificially inserted
+* disconnected from the scene
+
+The reveal must happen through camera motion.
+
+The camera is already moving from the first instant of the shot.
+
+The brand is never spawned, materialized, animated into existence, or suddenly introduced.
+
+Instead, the camera gently discovers it.
+
+Examples:
+
+* A Minecraft landscape reveals a massive block-built Nike swoosh integrated into the terrain.
+* A basketball arena reveals a branded courtside display.
+* A city street reveals a branded storefront or installation.
+* A kitchen reveals a product naturally sitting among existing items.
+* A gaming setup reveals a branded object integrated into the creator's space.
+
+The brand should become clearly recognizable during the middle of the shot.
+
+The viewer should instantly know what brand is being shown.
+
+Do not rely on rendered text.
+
+Avoid wordmarks whenever possible.
+
+Prefer iconic products, symbols, packaging, shapes, and visual identifiers.
+
+Describe the brand's visual mark in EXTREME, exhaustive detail - as if instructing an artist who has never seen it. Spell out, precisely:
+
+* its exact geometry and shapes (curves, angles, silhouette, how the parts fit together)
+* every color and exactly where each one sits, using specific shades (e.g. deep crimson, cobalt blue, pure white)
+* the proportions and internal layout of the mark
+* its material, surface, and finish in this scene (matte, glossy, embossed, molded, neon, etc.)
+
+Do not merely name the brand - paint its logo in words. The more precisely you describe the mark's appearance, the more faithfully the model reproduces it. Still avoid spelled-out wordmark letters; describe the iconic SHAPE and COLOR arrangement instead.
+
+Example (Pepsi): "a circular emblem split by one wavy horizontal band into three zones - a deep red upper arc, a thin white wave across the middle, and a cobalt-blue lower arc - bold, glossy, and perfectly symmetrical, the curves crisp and even."
+
+Match the exact visual language of the image:
+
+* Minecraft remains Minecraft.
+* Anime remains anime.
+* Live action remains photorealistic.
+* Stylized worlds remain stylized.
+
+Never mix styles.
+
+The clip is one continuous movement:
+
+* the camera drifts away from the resting view
+* discovers the branded element
+* lingers briefly so the brand is clearly visible
+* smoothly returns to the original composition
+
+By the end, the camera has naturally returned to its starting position and the branded element is no longer visible.
+
+Write 2-4 vivid cinematic sentences describing the exact shot.
+
+Focus on:
+
+* where the brand exists within this world
+* how the camera discovers it
+* why it feels natural
+* how the camera returns home
+
+Do not mention prompts, instructions, looping, start frame, end frame, or technical implementation.
+
+Also provide:
+
+negative_prompt:
+
+text, words, letters, captions, subtitles, signage text, UI text, watermark, gibberish text, garbled text, wordmark, floating logo, floating product, overlay, pop-in, spawning object, materializing object, sudden appearance, static opening frame, frozen start, delayed motion, held frame then motion, stutter, shaky camera, hard cut, jump cut, scene change, mismatched ending frame, residual drift, residual zoom, leftover pan, brand visible at ending frame, frame-filling logo, distorted logo, incorrect brand colors, generic unbranded product, warping, morphing, flicker, low resolution, style mismatch, unnatural placement
 
 Return JSON: { "prompt": string, "negative_prompt": string }.`;
 
@@ -126,8 +173,8 @@ export async function authorKlingPrompt(
   const facts = [
     `Brand: ${brand.name} (${brand.category})`,
     `Brand vibe / tagline (sets the tone of your idea): "${brand.tagline}"`,
-    `Hero product to feature: ${brand.product}`,
-    `Logo / brand mark (must read clearly): ${brand.logo}`,
+    `Brand to feature - reveal EITHER the product or a big clean version of the brand's iconic mark: ${brand.product}`,
+    `Brand mark (favor the iconic SYMBOL/shape, big and clean - do NOT spell out wordmark text): ${brand.logo}`,
     `Brand colors: ${brand.name}'s signature colors (accent ${brand.color})`,
     `Placement hint (a natural spot, but use your judgment - the moment can happen anywhere believable): ${surfacePhrase(args.surface)}`,
     args.scene ? `Scene (detected): ${args.scene}` : null,

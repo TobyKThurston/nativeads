@@ -49,5 +49,4 @@ export type Step =
   | "analyzing"
   | "detection"
   | "brands"
-  | "branching"
   | "previews";
