@@ -29,6 +29,7 @@ import {
 } from "@/lib/providers/nanobanana";
 import { videoProvider, VEO_MODEL } from "@/lib/config";
 import { authorVideoPrompt } from "@/lib/promptAuthor";
+import { isValidSpec } from "@/lib/specValidation";
 
 export const runtime = "nodejs"; // node:crypto for JWT signing
 export const dynamic = "force-dynamic";
@@ -36,22 +37,6 @@ export const maxDuration = 60; // GPT prompt-authoring is a vision call; give it
 
 function badRequest(message: string) {
   return Response.json({ error: message }, { status: 400 });
-}
-
-function isValidSpec(s: unknown): s is GenerationSpec {
-  if (!s || typeof s !== "object") return false;
-  const v = s as Record<string, unknown>;
-  // New optional fields (Subtask 1): tolerate absence; reject only wrong shapes.
-  if (v.referenceImages !== undefined && !Array.isArray(v.referenceImages)) return false;
-  if (v.transcriptContext !== undefined && typeof v.transcriptContext !== "string") return false;
-  return (
-    typeof v.frame === "string" &&
-    (v.frame.startsWith("data:") || v.frame.startsWith("http")) &&
-    typeof v.styleId === "string" &&
-    typeof v.brand === "object" &&
-    typeof v.surface === "object" &&
-    (v.durationSec === 5 || v.durationSec === 10)
-  );
 }
 
 /** Encode mock job timing into an opaque, stateless token. */
