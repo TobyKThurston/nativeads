@@ -23,6 +23,8 @@ export type SavedClip = {
   brandId: string;
   videoUrl: string | null;
   provider?: string;
+  /** source timestamp this cut splices into — so replay restores its own moment */
+  timestamp?: number;
 };
 
 /** A saved ad project — everything needed to re-render the previews screen. */
@@ -37,7 +39,10 @@ export type SavedAd = {
   brandIds: string[];
   /** for a file source, `source.url` is a stale blob URL — rehydrate via getSourceBlob */
   source: VideoSource;
+  /** the best moment (back-compat single-moment field; also `moments[0]`) */
   analysis: AnalysisResult;
+  /** all moments, one per cut (optional for ads saved before multi-moment) */
+  moments?: AnalysisResult[];
   clips: SavedClip[];
 };
 

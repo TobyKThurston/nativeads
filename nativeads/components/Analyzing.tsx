@@ -7,8 +7,11 @@ import {
   captureFrame,
   heuristicFromImage,
   heuristicYouTube,
+  pickScanTimes,
+  rankTopMoments,
   fmtTime,
   type AnalysisResult,
+  type Capture,
   type ScoredSurface,
 } from "@/lib/analyze";
 import { requestGptDetection, fetchYouTubeFrame } from "@/lib/detect";
@@ -19,66 +22,49 @@ const LIME = "#ff6a3d"; // coral — kept the name to minimise churn
 const CYAN = "#2fa8e6"; // sky
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/** How many frames we scan cheaply, and how many moments we keep (one per cut). */
+const SCAN_FRAMES = 6;
+const MOMENTS = 3;
+
 export function Analyzing({
   source,
   onComplete,
 }: {
   source: VideoSource;
-  onComplete: (r: AnalysisResult) => void;
+  /** the top moments (one per upcoming brand cut), best-scoring first by timeline */
+  onComplete: (moments: AnalysisResult[]) => void;
 }) {
   const isFile = source.kind === "file";
   const [phase, setPhase] = useState<"capturing" | "thinking" | "done">("capturing");
   const [frameImage, setFrameImage] = useState("");
   const [t, setT] = useState(0);
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [moments, setMoments] = useState<AnalysisResult[]>([]);
 
   useEffect(() => {
     const signal = { cancelled: false };
     (async () => {
-      // 1 — grab a single REAL frame at a random point
-      let cap = { image: "", t: 0, duration: 0, aspect: 16 / 9 };
-      let thumb = "";
-      try {
-        if (source.kind === "file") {
-          cap = await captureFrame(source.url);
-        } else {
-          // Real frame via server (yt-dlp + ffmpeg); thumbnail only if that fails.
-          const real = await fetchYouTubeFrame(source.id);
-          if (real) {
-            cap = real;
-          } else {
-            thumb = await resolveThumb(source.id);
-            cap = { image: thumb, t: Math.round(12 + Math.random() * 46), duration: 0, aspect: 16 / 9 };
-          }
-        }
-      } catch {
-        /* keep neutral cap */
-      }
+      const tStart = performance.now();
+      // 1 — collect MOMENTS candidate frames (file: scan many cheaply + rank;
+      //     youtube: pull a few real frames). Each carries its own timestamp.
+      const { previewImage, previewT } = await firstGlimpse(source);
       if (signal.cancelled) return;
-      setFrameImage(cap.image);
-      setT(cap.t);
+      setFrameImage(previewImage);
+      setT(previewT);
       setPhase("thinking");
 
-      // 2 — ask GPT vision; fall back to local heuristic
-      const tStart = performance.now();
-      let res = await requestGptDetection(cap.image, { timestamp: cap.t, duration: cap.duration, aspect: cap.aspect });
-      if (!res) {
-        // Real captured frames are same-origin data URLs → readable pixels.
-        try {
-          if (cap.image.startsWith("data:")) res = await heuristicFromImage(cap);
-          else throw new Error("no readable pixels");
-        } catch {
-          res = heuristicYouTube(thumb || cap.image, source.kind === "youtube" ? source.id : "x", cap.t);
-        }
-      }
-      if (signal.cancelled) return;
+      const moments = await analyzeMoments(source, () => signal.cancelled);
+      if (signal.cancelled || moments.length === 0) return;
 
       // small floor so the "thinking" beat reads as deliberate
       const elapsed = performance.now() - tStart;
       if (elapsed < 1500) await sleep(1500 - elapsed);
       if (signal.cancelled) return;
 
-      setResult(res);
+      setMoments(moments);
+      setResult(moments[0]);
+      setT(moments[0].timestamp);
+      setFrameImage(moments[0].frame.url);
       setPhase("done");
     })();
     return () => { signal.cancelled = true; };
@@ -96,7 +82,9 @@ export function Analyzing({
             👀 Step 1 · Scanning
           </span>
           <h2 className="mt-3.5 font-display text-[clamp(24px,3.2vw,36px)] font-bold leading-tight tracking-tight text-chalk">
-            {phase === "done" ? "Found the best spot!" : phase === "thinking" ? "Taking a good look…" : "Grabbing a frame…"}
+            {phase === "done"
+              ? moments.length > 1 ? `Found ${moments.length} native moments!` : "Found the best spot!"
+              : phase === "thinking" ? "Scanning for the best moments…" : "Grabbing frames…"}
           </h2>
         </div>
         <span className="hidden text-[13px] font-bold tabular text-fog sm:block">
@@ -245,7 +233,7 @@ export function Analyzing({
                 </div>
                 {result?.source === "heuristic" && (
                   <p className="mt-3 rounded-xl bg-sun/15 px-3 py-2 text-[12px] font-semibold leading-relaxed text-[#b8841f]">
-                    No OPENAI_API_KEY — ran the local heuristic. Add a key in .env.local to use GPT vision.
+                    No OPENAI_API_KEY — ran the local heuristic. Add it to .env.local or .env to use GPT vision.
                   </p>
                 )}
               </div>
@@ -258,8 +246,8 @@ export function Analyzing({
         <AnimatePresence>
           {phase === "done" && result && (
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-              <Button onClick={() => onComplete(result)}>
-                Use this placement <ArrowRight />
+              <Button onClick={() => onComplete(moments.length ? moments : [result])}>
+                Use {moments.length > 1 ? `these ${moments.length} moments` : "this placement"} <ArrowRight />
               </Button>
             </motion.div>
           )}
@@ -270,6 +258,84 @@ export function Analyzing({
       </div>
     </div>
   );
+}
+
+/** A quick frame to show while the vision pass runs (not necessarily a kept moment). */
+async function firstGlimpse(source: VideoSource): Promise<{ previewImage: string; previewT: number }> {
+  try {
+    if (source.kind === "file") {
+      const cap = await captureFrame(source.url);
+      return { previewImage: cap.image, previewT: cap.t };
+    }
+    const real = await fetchYouTubeFrame(source.id);
+    if (real) return { previewImage: real.image, previewT: real.t };
+    const thumb = await resolveThumb(source.id);
+    return { previewImage: thumb, previewT: Math.round(12 + Math.random() * 46) };
+  } catch {
+    return { previewImage: "", previewT: 0 };
+  }
+}
+
+/**
+ * Produce the top MOMENTS placements, one per upcoming brand cut. Files: scan
+ * SCAN_FRAMES frames, rank them with the free local heuristic, then run the paid
+ * GPT vision pass on only the best MOMENTS (so 3× analyze cost, not 6×). YouTube:
+ * pull a few real frames and GPT each. Falls back to the heuristic whenever GPT
+ * is unavailable. Returned ordered by timestamp so cut 1→3 follows the timeline.
+ */
+async function analyzeMoments(source: VideoSource, cancelled: () => boolean): Promise<AnalysisResult[]> {
+  if (source.kind === "file") {
+    // one capture learns the duration; the rest spread across the clip
+    const first = await captureFrame(source.url).catch(() => null);
+    if (!first || cancelled()) return [];
+    const times = pickScanTimes(first.duration, SCAN_FRAMES - 1);
+    const rest = await Promise.all(times.map((tt) => captureFrame(source.url, tt).catch(() => null)));
+    if (cancelled()) return [];
+    const caps = [first, ...(rest.filter(Boolean) as Capture[])];
+    // cheap local score for every scanned frame → keep the best MOMENTS
+    const scored = (await Promise.all(caps.map((c) => heuristicFromImage(c).catch(() => null)))).filter(
+      Boolean
+    ) as AnalysisResult[];
+    const top = rankTopMoments(scored, MOMENTS);
+    if (cancelled() || top.length === 0) return [];
+    // upgrade the chosen few with GPT vision (own scene/surface/subject per moment)
+    const finals = await Promise.all(
+      top.map(async (h) => {
+        const gpt = await requestGptDetection(h.frame.url, {
+          timestamp: h.timestamp,
+          duration: h.duration,
+          aspect: h.frame.aspect,
+        });
+        return gpt ?? h;
+      })
+    );
+    return finals.sort((a, b) => a.timestamp - b.timestamp);
+  }
+
+  // youtube: grab up to MOMENTS real frames (parallel), GPT each
+  const reals = (
+    await Promise.all(Array.from({ length: MOMENTS }, () => fetchYouTubeFrame(source.id)))
+  ).filter(Boolean) as Capture[];
+  if (cancelled()) return [];
+  if (reals.length) {
+    const finals = await Promise.all(
+      reals.map(async (c) => {
+        const gpt = await requestGptDetection(c.image, { timestamp: c.t, duration: c.duration, aspect: c.aspect });
+        return gpt ?? heuristicYouTube(c.image, source.id, c.t);
+      })
+    );
+    return dedupeByTime(finals).sort((a, b) => a.timestamp - b.timestamp);
+  }
+  // last resort: thumbnail + deterministic heuristic at spread timestamps
+  const thumb = await resolveThumb(source.id);
+  return pickScanTimes(0, MOMENTS).map((tt) => heuristicYouTube(thumb, source.id, Math.round(tt)));
+}
+
+/** Drop near-duplicate timestamps (within 1s) so cuts don't share a beat. */
+function dedupeByTime(rs: AnalysisResult[]): AnalysisResult[] {
+  const out: AnalysisResult[] = [];
+  for (const r of rs) if (!out.some((o) => Math.abs(o.timestamp - r.timestamp) < 1)) out.push(r);
+  return out.length ? out : rs;
 }
 
 function modelLabelShort(phase: string, result: AnalysisResult | null) {

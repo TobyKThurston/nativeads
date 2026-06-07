@@ -25,7 +25,7 @@ describe("buildVeoRequest", () => {
   it("uses the same clean frame for first and last (seamless splice)", () => {
     const req = buildVeoRequest(baseSpec);
     expect(req.image).toBe(req.last_image);
-    expect(req.image).toBe("QUJD"); // data: prefix stripped to bare base64
+    expect(req.image).toBe(baseSpec.frame); // full frame kept so the adapter has the mime
   });
 
   it("maps reference images to a bare url list", () => {

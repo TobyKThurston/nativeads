@@ -4,14 +4,22 @@ import type { ScoredSurface } from "@/lib/analyze";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const SYSTEM = `You are a computer-vision system for NATIVE ad placement in video.
-Given a single video frame, do two things:
-1. Describe the scene in one vivid sentence ("scene"): the setting, the key objects/subjects,
-   the visual medium/art style (e.g. live-action, Minecraft, anime), lighting and mood. This
-   grounds a downstream video model that must insert a product natively into THIS scene.
-2. Find up to 4 surfaces where a brand logo or product could be composited so it looks like it
-   naturally belongs in the scene (walls, tabletops, signage, screens/monitors, apparel, floors,
-   shelves). Prefer flat, unobtrusive, well-lit surfaces.
+const SYSTEM = `You are a computer-vision system for NATIVE ad placement in video. The downstream
+video model does NOT composite a logo onto a surface — it animates a SUBJECT in the scene
+physically bringing a product into frame, using it, and lowering it back out (think: a podcaster
+reaching over and sipping a can mid-sentence). Your job is to find what makes that motivated action
+possible. Given a single video frame, do two things:
+1. Describe the scene in one vivid sentence ("scene"): the setting, the visual medium/art style
+   (e.g. live-action, Minecraft, anime), lighting and mood, AND — most important — the SUBJECT:
+   who or what is in the frame (a host, hands, a creator at a desk, a player/avatar) and whether
+   they have free hands that could pick something up. Name the subject explicitly.
+2. Find up to 4 PLACEMENT ORIGINS — believable spots where a product could be naturally brought in
+   from, handled, and set back to. Strongly prefer spots within arm's reach of the subject: the
+   desk/table/counter right beside them, the area just off the frame edge next to their hands, or
+   their hands themselves. Only if there is genuinely no person in the frame, fall back to a spot
+   the scene's existing motion already passes through. Avoid distant walls, floors, ceilings and
+   signage — a person cannot naturally reach those, and the product would look pasted on. Use the
+   "label" to name the spot relative to the subject (e.g. "Desk beside host", "Right of keyboard").
 Return normalized coordinates in [0,1] with the top-left of the frame as origin.`;
 
 const SCHEMA = {
@@ -85,7 +93,7 @@ export async function POST(req: Request) {
           {
             role: "user",
             content: [
-              { type: "input_text", text: "Find the best native ad-placement surfaces in this frame. Best first." },
+              { type: "input_text", text: "Identify the subject and the best reachable placement origins where they could naturally bring a product into frame and handle it. Best first." },
               { type: "input_image", image_url: image },
             ],
           },

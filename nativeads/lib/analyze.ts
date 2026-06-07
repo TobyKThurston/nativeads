@@ -84,6 +84,54 @@ export function buildResult(
   return { frame, timestamp, duration, confidence, primary, surfaces: sorted, ...meta };
 }
 
+/** Score we rank scanned moments by — the best surface's placement score. */
+const momentScore = (r: AnalysisResult) => r.primary?.score ?? r.confidence ?? 0;
+
+/**
+ * Spread `count` distinct sample timestamps across a clip's middle (8–92%), one
+ * per even segment with a little jitter so repeat runs vary. When duration is
+ * unknown (0, e.g. a YouTube clip we couldn't probe) we return spread second
+ * guesses instead. Used to scan several frames before ranking the best moments.
+ */
+export function pickScanTimes(duration: number, count: number): number[] {
+  if (count <= 0) return [];
+  const d = isFinite(duration) && duration > 0 ? duration : 0;
+  if (d <= 0) {
+    return Array.from({ length: count }, (_, i) => Math.round(8 + i * 17 + Math.random() * 6));
+  }
+  const lo = d * 0.08;
+  const seg = (d * 0.92 - lo) / count;
+  return Array.from({ length: count }, (_, i) => {
+    const base = lo + seg * (i + 0.5) + (Math.random() - 0.5) * seg * 0.6;
+    return clamp(base, 0.05, Math.max(0.05, d - 0.05));
+  });
+}
+
+/**
+ * Pick the top `n` moments by placement score, skipping any that sit within
+ * `minGapSec` of an already-chosen moment so the cuts don't all land on the same
+ * beat. Backfills from the remainder if dedupe leaves us short, then returns them
+ * ordered by timestamp so cut 1 → 3 follows the video timeline.
+ */
+export function rankTopMoments(
+  results: AnalysisResult[],
+  n: number,
+  minGapSec = 1.5
+): AnalysisResult[] {
+  const ranked = [...results].sort((a, b) => momentScore(b) - momentScore(a));
+  const chosen: AnalysisResult[] = [];
+  for (const r of ranked) {
+    if (chosen.length >= n) break;
+    if (chosen.some((c) => Math.abs(c.timestamp - r.timestamp) < minGapSec)) continue;
+    chosen.push(r);
+  }
+  for (const r of ranked) {
+    if (chosen.length >= n) break;
+    if (!chosen.includes(r)) chosen.push(r);
+  }
+  return chosen.sort((a, b) => a.timestamp - b.timestamp);
+}
+
 function seekTo(v: HTMLVideoElement, t: number) {
   return new Promise<void>((res) => {
     let done = false;

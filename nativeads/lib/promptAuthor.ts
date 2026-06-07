@@ -23,33 +23,60 @@ export function isOpenAiConfigured(): boolean {
   return Boolean(process.env.OPENAI_API_KEY);
 }
 
-const SYSTEM = `You write prompts for Kling, an image-to-video model, for NATIVE product placement.
+const SYSTEM = `You write prompts for an image-to-video model that does NATIVE product placement —
+the kind where the product is WOVEN into the scene through a real, motivated action, the way a
+sponsored podcaster naturally grabs and sips a can of the drink mid-sentence. The opposite of
+this — and the failure you must avoid at all costs — is a product that simply fades, pops, or
+floats onto a spot in the frame like a sticker pasted on top. That looks like an ad bolted onto
+the video. You are writing the OPPOSITE of that.
 
-You are given ONE video frame. It is used as BOTH the first and last frame of a short clip
-(image == image_tail), so the clip MUST begin and end on this exact frame, unchanged, and loop
-seamlessly back into the original video. The brand product can therefore only appear in the
-MIDDLE of the clip — it must be absent at the very first and very last frame.
+You are given ONE video frame. It is used as BOTH the first and last frame of a short clip, so the
+clip opens and closes on this exact resting scene and loops seamlessly back into the source video.
+Read this NOT as "the product is absent" but as: the whole product interaction happens BETWEEN
+those two rest points and resolves back to rest — a subject reaches for the product, brings it in,
+uses it, and lowers it back out of view so the scene returns to where it started.
 
-Write a Kling prompt that inserts the given brand product into THIS scene so it looks like it
-always belonged there. Rules:
-- Look at the frame. Match its visual medium and art style EXACTLY. If it's a Minecraft world,
-  the product is built from blocky voxel cubes; if anime, it's cel-shaded; if live-action, it's
-  photoreal. Never mix mediums.
-- Ground the action in what is actually visible. Pick a believable spot from the real frame and a
-  small, natural motion that reveals the product and then returns the scene to rest — e.g. "the
-  camera eases left to reveal, on the crafting table, a Coca-Cola bottle built from red voxel
-  blocks," then it settles back so the final frame matches the first exactly.
-- The brand must be recognizable and legible: render the named product and show its logo clearly,
-  in the brand's colors. Keep it at realistic scale — it must NOT fill or dominate the frame.
-- No on-screen captions, subtitles, UI, or watermark text. No scene cut or transition. The
-  surrounding scene never changes.
-- Write 2-4 vivid, concrete sentences describing the shot and its motion, the way a strong
-  video-generation prompt reads. Do not mention "first frame"/"last frame" jargon in the prompt
-  itself — express it as motion that begins and ends on the resting scene.
+How to write the prompt:
 
-Also write negative_prompt: a comma-separated list guarding against garbled/misspelled/wrong/
-distorted logo, wrong brand colors, generic unbranded product, oversized or frame-filling product,
-captions/subtitles/overlays/watermark, warping, morphing, flicker, scene change, abrupt cut, lowres.
+1. READ THE FRAME FIRST. Identify the SUBJECT and what they are doing: is there a person, a host,
+   visible hands, a creator at a desk, a player/avatar, a character? What is the visual medium
+   (live-action / Minecraft voxel / anime cel-shade / 3D / etc.)? Note a believable source for the
+   product (just off-frame, on the desk edge, in a hand already in shot).
+
+2. BUILD A MOTIVATED ACTION, not a reveal of a static object:
+   - If there IS a person / host / hands in the frame: THEY introduce the product. They reach off
+     to the side and bring the product into frame, pick it up, hold/sip/use it naturally, then set
+     it back down or lower it out of view so the hands return to rest. The product is HANDLED and
+     in motion — never sitting still waiting to be noticed.
+   - If spoken context is provided, let it MOTIVATE the action and time it to the words — e.g.
+     "I'm parched" → the host reaches over and takes a sip. This is the single strongest signal
+     for making the placement feel native; use it whenever present.
+   - Only if there is genuinely no actor in the scene: the product enters carried by the scene's
+     own existing motion (a hand passing through, the camera following an action already underway),
+     not by appearing on an empty surface.
+
+3. NEVER write: the product fading in, popping in, materializing, being "revealed" on a table,
+   hovering, glowing into existence, or appearing on an untouched surface while everything else
+   holds still. If your sentence could describe a graphic pasted over the video, rewrite it as a
+   physical action a subject performs.
+
+4. Match the frame's visual medium and art style EXACTLY (voxel → blocky cubes, anime → cel-shaded,
+   live-action → photoreal). The product reads as part of that world, same lighting and grain.
+
+5. The brand must be recognizable and legible: render the named product, show its logo clearly in
+   the brand's colors. Realistic scale — held/used at natural size, it must NOT fill or dominate
+   the frame. No on-screen captions, subtitles, UI, or watermark text. No scene cut. The
+   surrounding scene and camera framing stay continuous.
+
+Write 2-4 vivid, concrete sentences naming the subject, the motivated action, the product, and how
+the motion eases back to the resting scene. Do not use "first frame"/"last frame" jargon — express
+it as action that begins and ends at rest.
+
+Also write negative_prompt: a comma-separated list guarding against the pasted-on look (floating
+product, product fading in, popping in, hovering, sticker/overlay/composite, product appearing on
+its own) AND garbled/misspelled/wrong/distorted logo, wrong brand colors, generic unbranded
+product, oversized or frame-filling product, captions/subtitles/overlays/watermark, warping,
+morphing, flicker, scene change, abrupt cut, frozen scene, lowres.
 
 Return JSON: { "prompt": string, "negative_prompt": string }.`;
 
@@ -97,14 +124,17 @@ export async function authorVideoPrompt(
   const transcript = args.transcript?.trim();
 
   // Structured facts for GPT; the medium is primarily read from the image, with this as a hint.
+  // Scene + spoken context lead — they are what make the placement *motivated* rather than pasted-on.
   const facts = [
+    args.scene ? `Scene (detected in the frame): ${args.scene}. Anchor the action to a subject in THIS scene.` : null,
+    transcript
+      ? `Spoken context at this exact moment: "${transcript}". This is your strongest cue — make the action feel triggered by what is being said (e.g. a thirst remark → the host takes a sip), but never render captions or subtitles.`
+      : null,
     `Brand: ${brand.name}`,
-    `Product to feature: ${brand.product}`,
+    `Product to feature (the thing a subject physically picks up / uses): ${brand.product}`,
     `Logo / brand mark: ${brand.logo}`,
     `Brand colors: ${brand.name}'s signature colors (accent ${brand.color})`,
-    `Suggested placement: ${surfacePhrase(args.surface)}`,
-    args.scene ? `Scene (detected): ${args.scene}` : null,
-    transcript ? `Spoken context near this moment: "${transcript}". Use it to make the placement feel motivated and native, but never add captions or subtitles.` : null,
+    `Believable placement origin (where the product is brought in from / set back to): ${surfacePhrase(args.surface)}`,
     `Visual medium hint (operator-selected, defer to the image if it disagrees): ${style.label} — ${style.sceneDescriptor}; product rendered ${style.productClause}`,
     `Clip length: ${args.durationSec}s`,
   ]
@@ -116,7 +146,7 @@ export async function authorVideoPrompt(
   const content: Array<Record<string, unknown>> = [
     {
       type: "input_text",
-      text: `Write the video prompt for this native ad. This frame is BOTH the first and last frame.\n\n${facts}`,
+      text: `Write the video prompt for this native ad. This frame is BOTH the first and last frame, so the action starts and ends at this resting scene. Weave the product in through a motivated action by a subject in the frame — do NOT have it fade or float onto a surface.\n\n${facts}`,
     },
     { type: "input_image", image_url: args.image },
   ];

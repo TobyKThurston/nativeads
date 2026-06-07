@@ -29,7 +29,10 @@ export default function Home() {
   // ---- create-flow state ----
   const [step, setStep] = useState<Step>("landing");
   const [source, setSource] = useState<VideoSource | null>(null);
-  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  // The top moments (one per brand cut). Single-moment screens (Detection,
+  // Branching) read the best one via `analysis`; Previews binds brand[i] → moment[i].
+  const [moments, setMoments] = useState<AnalysisResult[]>([]);
+  const analysis = moments[0] ?? null;
   const [selected, setSelected] = useState<string[]>([]);
 
   // ---- gallery + the ad currently being viewed ----
@@ -44,7 +47,7 @@ export default function Home() {
       if (s?.kind === "file") URL.revokeObjectURL(s.url);
       return null;
     });
-    setAnalysis(null);
+    setMoments([]);
     setSelected([]);
     setStep("landing");
   }, []);
@@ -97,6 +100,7 @@ export default function Home() {
         brandIds: brands.map((b) => b.id),
         source,
         analysis,
+        moments,
         clips,
       };
       save(ad);
@@ -181,7 +185,7 @@ export default function Home() {
             {view === "create" && step === "analyzing" && source && (
               <Analyzing
                 source={source}
-                onComplete={(r) => { setAnalysis(r); setStep("detection"); }}
+                onComplete={(ms) => { setMoments(ms); setStep("detection"); }}
               />
             )}
 
@@ -202,6 +206,7 @@ export default function Home() {
                 <Previews
                   source={source}
                   analysis={analysis}
+                  moments={moments}
                   brands={brands}
                   onRestart={restart}
                   onSave={handleSave}
@@ -279,6 +284,7 @@ function SavedAdView({ ad, onBack }: { ad: SavedAd; onBack: () => void }) {
       <Previews
         source={{ kind: "youtube", id: "", url: "" }}
         analysis={ad.analysis}
+        moments={ad.moments ?? [ad.analysis]}
         brands={brands}
         savedClips={savedClips}
         initialStyleId={ad.styleId}
@@ -309,6 +315,7 @@ function SavedAdView({ ad, onBack }: { ad: SavedAd; onBack: () => void }) {
     <Previews
       source={source}
       analysis={ad.analysis}
+      moments={ad.moments ?? [ad.analysis]}
       brands={brands}
       savedClips={savedClips}
       initialStyleId={ad.styleId}

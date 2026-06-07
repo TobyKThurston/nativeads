@@ -137,14 +137,17 @@ export type GenerationJob = {
  * Build the natural-language prompt + negatives.
  *
  * The hard constraint: `frame` (image === image_tail) is the untouched source
- * frame and is the splice point, so Kling is forced to open AND close on it
- * unchanged. The product therefore lives ONLY in the middle frames — it has to
- * materialize into the scene, hold, then ease back out so the final frame equals
- * the first. The prompt's job is to describe exactly that arc (so the transition
- * is smooth, not a snap), keep the product at realistic scale (no frame-filling
- * hero shot), and ground the painted middle frames in what's actually in the
- * video (`sceneContext`, from the GPT vision pass on this same frame). The brand
- * still has to read clearly, so we name the signature product + logo + colors.
+ * frame and is the splice point, so the model is forced to open AND close on it
+ * unchanged. The naive reading of that — "product absent at both ends, fades in
+ * for the middle" — is exactly what produces a pasted-on, slapped-over-the-video
+ * look. So instead we frame it as a MOTIVATED ACTION: a subject in the scene
+ * physically brings the product into frame (reach / pick up / sip / use) and
+ * lowers it back out, so the scene returns to rest on its own. The product is
+ * handled and in motion throughout — never floating onto a surface. The prompt
+ * grounds that action in what's actually in the video (`sceneContext`) and, when
+ * present, the spoken moment (`transcriptContext`) that motivates it. Realistic
+ * scale (no frame-filling hero shot); brand reads clearly (product + logo +
+ * colors).
  *
  * The negative prompt suppresses intrusive *overlay* text (floating
  * captions/subtitles/UI) and watermarks (NOT the product's own logo), guards
@@ -157,23 +160,32 @@ export function buildPrompt(spec: GenerationSpec): { prompt: string; negative_pr
   const placement = surfacePhrase(spec.surface);
   const scene = spec.sceneContext?.trim().replace(/[.\s]+$/, ""); // strip trailing "." so we don't double up
 
+  const transcript = spec.transcriptContext?.trim().replace(/[.\s]+$/, "");
+
   const prompt = [
-    `Native product-placement ad for ${brand.name}, generated inside an existing video clip.`,
-    // ground the painted middle frames in the real scene
+    `Native product placement for ${brand.name}, woven into an existing video clip through a motivated, physical action — NOT a product pasted onto the frame.`,
+    // ground the action in the real scene
     scene ? `The scene: ${scene}.` : `Scene: ${style.sceneDescriptor}.`,
-    // the hard frame constraint — clean at both ends
-    `The clip begins and ends on the exact same given frame: the real scene with NO ${brand.name} product visible at the very first or very last frame.`,
-    // the arc — product lives only in the middle, then eases out
-    `Only in between, ${brand.product} appears and blends into the scene naturally ${placement} — ${style.productClause} — as if it had always belonged there,`,
-    `then eases back out so the final frame returns to the original scene exactly.`,
+    // the spoken cue motivates the action when we have it
+    transcript ? `It is motivated by the moment ("${transcript}"): the action is triggered by what is happening or being said.` : null,
+    // the loop constraint, reframed as natural rest (NOT "product absent")
+    `The clip opens and closes on this exact resting scene, so the whole interaction happens in between and returns to rest.`,
+    // the arc — a subject HANDLES the product; motivated action, not a reveal
+    `A subject in the scene reaches over (${placement}) and brings ${brand.product} into frame, holds or uses it naturally — ${style.productClause} — then lowers it back out of view so the scene settles exactly where it began.`,
+    // explicit anti-pattern
+    `The product is physically handled and in motion the entire time; it never fades in, pops in, hovers, or appears on its own on a surface.`,
     // scale + branding
-    `Realistic scale: it sits within the scene and never fills or dominates the frame.`,
+    `Realistic scale: held and used at natural size, never filling or dominating the frame.`,
     `${brand.name}'s branding stays clear and legible: ${brand.logo}, in ${brand.name}'s signature colors.`,
     // integration
     `Match the scene's lighting, lens and art style with subtle, believable motion — no camera cut, no transition, the surrounding scene never changes, so it loops seamlessly back into the source footage.`,
-  ].join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   const negative_prompt =
+    // the pasted-on / overlay failure mode — the thing we are fighting hardest
+    "floating product, product fading in, product popping in, hovering product, sticker, overlay composite, product appearing on its own, product on an untouched surface, frozen scene, " +
     // intrusive overlays that break the native illusion (but NOT the product's own logo)
     "floating caption, subtitle, on-screen text overlay, ui overlay, watermark, " +
     // brand-fidelity guards
@@ -265,7 +277,9 @@ export function buildVeoRequest(
     opts.prompt && opts.negative_prompt
       ? { prompt: opts.prompt, negative_prompt: opts.negative_prompt }
       : buildPrompt(spec);
-  const frame = toImagePayload(spec.frame);
+  // Keep the full frame (data URL / http), NOT bare base64: the Veo adapter needs
+  // the mime type for inlineData. The seamless invariant still holds (same value).
+  const frame = spec.frame;
   return {
     model: opts.model ?? "veo-3.1-generate-preview",
     prompt,

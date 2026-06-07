@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "motion/react";
 import type { Brand, VideoSource } from "@/lib/types";
 import { fmtTime as fmt, type AnalysisResult } from "@/lib/analyze";
@@ -10,6 +10,7 @@ import { STYLES, inferStyle, type StyleId } from "@/lib/style";
 import type { GenerationSpec, ReferenceImage } from "@/lib/generation";
 import type { SavedClip } from "@/lib/store";
 import { resolveBrandFile, resolveStyleFile } from "@/lib/designClient";
+import { GEMINI_RPM, GEN_MAX_IN_FLIGHT } from "@/lib/config";
 
 /** Generated clip length, in seconds — the window the native ad splices into. */
 const AD_LEN = 5 as const;
@@ -36,6 +37,7 @@ const GENERATE_CUTS: number[] | null = parseGenerateCuts(process.env.NEXT_PUBLIC
 export function Previews({
   source,
   analysis,
+  moments,
   brands,
   onRestart,
   mode = "create",
@@ -46,6 +48,8 @@ export function Previews({
 }: {
   source: VideoSource;
   analysis: AnalysisResult;
+  /** one moment per brand cut; brand[i] splices at moments[i]. Falls back to [analysis]. */
+  moments?: AnalysisResult[];
   brands: Brand[];
   onRestart: () => void;
   /** "create" = live flow with a Save action; "view" = replay a saved ad. */
@@ -60,8 +64,17 @@ export function Previews({
   restartLabel?: string;
 }) {
   const isFile = source.kind === "file";
-  const startAt = analysis.timestamp;
-  const surface = analysis.primary;
+  // One moment per brand cut: brand[i] generates from, and splices at, moments[i].
+  // Falls back to the single analysis (older saved ads / single-moment path).
+  const momentList = useMemo(
+    () => (moments && moments.length ? moments : [analysis]),
+    [moments, analysis]
+  );
+  const momentFor = useCallback(
+    (i: number) => momentList[Math.max(0, i) % momentList.length],
+    [momentList]
+  );
+  const brandIndex = useCallback((id: string) => brands.findIndex((b) => b.id === id), [brands]);
 
   // ---- native-ad generation (routed to Kling; mock until a key is wired) ----
   const hint = source.kind === "file" ? source.name : source.id;
@@ -99,6 +112,10 @@ export function Previews({
   const selectedClip = selectedJob?.job?.videoUrl ?? null;
   /** the hero plays a seamless source→ad→source splice (file uploads only) */
   const heroSpliced = isFile && !!selectedClip;
+  // The hero follows the SELECTED brand's moment: its clip splices into the
+  // source at this timestamp (each of the three cuts lands at a different spot).
+  const selectedMoment = momentFor(Math.max(0, brandIndex(selectedBrandId)));
+  const startAt = selectedMoment.timestamp;
 
   // ---- hero transport ----
   const heroVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -110,53 +127,91 @@ export function Previews({
   const [epoch, setEpoch] = useState(0); // youtube restart
   const [saved, setSaved] = useState(false);
 
+  // ---- Nano Banana design files, surfaced for the user to inspect ----
+  // The per-video style plate (shared) + each brand's clean product render that
+  // we feed to the video model as reference images. Populated as runGeneration
+  // resolves them; null/empty on the keyless path.
+  const [styleFile, setStyleFile] = useState<string | null>(null);
+  const [brandFiles, setBrandFiles] = useState<Record<string, string>>({});
+  const [lightbox, setLightbox] = useState<{ url: string; label: string } | null>(null);
+  const clearDesignFiles = useCallback(() => {
+    setStyleFile(null);
+    setBrandFiles({});
+  }, []);
+
   const handleSave = useCallback(() => {
     const clips: SavedClip[] = brands.map((b) => {
       const live = jobs[b.id]?.job?.videoUrl ?? null;
       const url = live ?? savedClips?.[b.id] ?? null;
-      return { brandId: b.id, videoUrl: url, provider: jobs[b.id]?.job?.provider };
+      // remember the moment this cut splices into so replay restores it
+      return { brandId: b.id, videoUrl: url, provider: jobs[b.id]?.job?.provider, timestamp: momentFor(brandIndex(b.id)).timestamp };
     });
     onSave?.({ clips, styleId });
     setSaved(true);
-  }, [brands, jobs, savedClips, styleId, onSave]);
+  }, [brands, jobs, savedClips, styleId, onSave, momentFor, brandIndex]);
 
   const runGeneration = useCallback(() => {
     setSaved(false); // a fresh render means there's something new to save
     void (async () => {
       // Resolve the per-video style file ONCE and share it across all three brand
-      // cuts (§2). null for native footage or when image-gen is off.
-      const styleRef = await resolveStyleFile({ frame: analysis.frame.url, styleId });
-      await Promise.all(
-        brands.map(async (b, i) => {
-          if (GENERATE_CUTS && !GENERATE_CUTS.includes(i)) return; // cost gate: limit which cuts render
-          // Per-brand product reference (cache-or-generate). null → text-only.
-          const brandRef = await resolveBrandFile({
-            frame: analysis.frame.url,
-            brand: b,
-            styleId,
-            transcript: analysis.transcript,
-          });
-          const referenceImages = [brandRef, styleRef].filter(Boolean) as ReferenceImage[];
-          const spec: GenerationSpec = {
-            brand: b,
-            surface: { id: surface.id, label: surface.label, x: surface.x, y: surface.y, w: surface.w, h: surface.h },
-            styleId,
-            // The captured moment is BOTH first and last frame — the splice points.
-            // It stays the *real* source frame (never a composited product) so the
-            // clip loops seamlessly back into the source. The product enters via
-            // referenceImages (design files) + the authored prompt instead.
-            frame: analysis.frame.url,
-            timestamp: startAt,
-            durationSec: AD_LEN,
-            sceneContext: analysis.scene, // GPT's description of what's actually in the video
-            transcriptContext: analysis.transcript, // §3 Whisper seam (no-op until populated)
-            referenceImages: referenceImages.length ? referenceImages : undefined,
-          };
-          generate(b.id, spec);
-        })
-      );
+      // cuts (§2) — style is the medium, consistent across the clip. null for
+      // native footage or when image-gen is off.
+      const styleRef = await resolveStyleFile({ frame: momentFor(0).frame.url, styleId });
+      setStyleFile(styleRef?.url ?? null); // surface it for inspection
+
+      // Fire one cut, bound to THIS brand's own moment (frame/scene/transcript +
+      // the timestamp it splices into) — that's what places the three ads at
+      // three different points in the clip.
+      const startCut = async (b: Brand) => {
+        const m = momentFor(brandIndex(b.id));
+        const surface = m.primary;
+        // Per-brand product reference (cache-or-generate) off this moment's frame.
+        const brandRef = await resolveBrandFile({
+          frame: m.frame.url,
+          brand: b,
+          styleId,
+          transcript: m.transcript,
+        });
+        if (brandRef) setBrandFiles((prev) => ({ ...prev, [b.id]: brandRef.url })); // surface it
+        const referenceImages = [brandRef, styleRef].filter(Boolean) as ReferenceImage[];
+        const spec: GenerationSpec = {
+          brand: b,
+          surface: { id: surface.id, label: surface.label, x: surface.x, y: surface.y, w: surface.w, h: surface.h },
+          styleId,
+          // This moment's frame is BOTH first and last frame — the splice points.
+          // It stays the *real* source frame (never a composited product) so the
+          // clip loops seamlessly back into the source. The product enters via
+          // referenceImages (design files) + the authored prompt instead.
+          frame: m.frame.url,
+          timestamp: m.timestamp,
+          durationSec: AD_LEN,
+          sceneContext: m.scene, // GPT's description of what's actually at THIS moment
+          transcriptContext: m.transcript, // §3 Whisper seam (no-op until populated)
+          referenceImages: referenceImages.length ? referenceImages : undefined,
+        };
+        // awaited so the cut counts as "in flight" until its create returns; the
+        // 1.3s poll loop in useGeneration runs independently afterwards.
+        await generate(b.id, spec);
+      };
+
+      // Veo 3.1 preview caps are low (~GEMINI_RPM rpm + a videos-per-request limit).
+      // Don't burst all cuts at once: bound how many are in flight and space their
+      // starts. Each cut is up to 2 Gemini calls (design file + video create).
+      const queue = brands.filter((_, i) => !GENERATE_CUTS || GENERATE_CUTS.includes(i));
+      const gapMs = Math.ceil(60000 / GEMINI_RPM);
+      let lastStart = 0;
+      const worker = async () => {
+        for (let b = queue.shift(); b; b = queue.shift()) {
+          const wait = lastStart + gapMs - Date.now();
+          if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+          lastStart = Date.now();
+          await startCut(b);
+        }
+      };
+      const lanes = Math.min(GEN_MAX_IN_FLIGHT, queue.length);
+      await Promise.all(Array.from({ length: lanes }, worker));
     })();
-  }, [brands, surface, styleId, analysis.frame.url, analysis.scene, analysis.transcript, startAt, generate]);
+  }, [brands, styleId, momentFor, brandIndex, generate]);
 
   // ---- transport handlers (act on the single hero player) ----
   function toggle() {
@@ -215,13 +270,13 @@ export function Previews({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="flex items-center gap-1.5 rounded-full bg-coral/15 px-3 py-2 text-[12px] font-bold text-coral">
-            📍 @ {fmt(startAt)}
+            📍 @ {fmt(startAt)}{momentList.length > 1 ? ` · ${momentList.length} spots` : ""}
           </span>
           <label className="flex items-center gap-1.5 rounded-full border-2 border-line-2 bg-ink-2 px-3 py-1.5 text-[12px] font-bold text-fog">
             <span className="hidden text-fog-2 sm:inline">Style</span>
             <select
               value={styleId}
-              onChange={(e) => { setStyleId(e.target.value as StyleId); resetJobs(); setSaved(false); }}
+              onChange={(e) => { setStyleId(e.target.value as StyleId); resetJobs(); setSaved(false); clearDesignFiles(); }}
               className="ring-focus cursor-pointer bg-transparent font-bold text-chalk outline-none"
             >
               {STYLES.map((s) => (
@@ -399,34 +454,46 @@ export function Previews({
                     >
                       <div className="absolute inset-y-0 left-0 rounded-full bg-coral" style={{ width: `${progress * 100}%` }} />
 
-                      {/* ── native-ad placement marker: the moment + the 5s splice window ── */}
-                      {dur > 0 && (() => {
-                        const aStart = Math.max(0, Math.min(startAt, dur));
-                        const startPct = (aStart / dur) * 100;
-                        const widthPct = (Math.min(AD_LEN, dur - aStart) / dur) * 100;
-                        return (
-                          <>
-                            {/* the window the generated cut splices into */}
-                            <div
-                              className="pointer-events-none absolute inset-y-0 z-[1] rounded-full bg-sun/30 ring-2 ring-inset ring-sun/60"
-                              style={{ left: `${startPct}%`, width: `${widthPct}%` }}
-                            />
-                            {/* flag pinned at the anchor — visible even over the played fill */}
-                            <span
-                              className="group/ad absolute -top-1.5 bottom-0 z-[2] flex w-3.5 -translate-x-1/2 cursor-pointer justify-center"
-                              style={{ left: `${startPct}%` }}
-                            >
-                              <span className="absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 rounded-full bg-chalk" />
-                              <span className="absolute -top-1.5 left-1/2 -translate-x-1/2 rounded-md bg-coral px-1.5 py-px text-[8px] font-bold leading-tight tracking-wide text-white">
-                                AD
-                              </span>
-                              <span className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-chalk px-2 py-1 text-[10px] font-bold text-ink opacity-0 shadow-lg transition-opacity duration-150 group-hover/ad:opacity-100">
-                                Native ad · <span className="tabular text-coral">{fmt(aStart)}</span>
+                      {/* ── one placement marker per cut, each at its own moment ── */}
+                      {dur > 0 &&
+                        brands.map((b, i) => {
+                          const aStart = Math.max(0, Math.min(momentFor(i).timestamp, dur));
+                          const startPct = (aStart / dur) * 100;
+                          const widthPct = (Math.min(AD_LEN, dur - aStart) / dur) * 100;
+                          const isSel = b.id === selectedBrand.id;
+                          return (
+                            <span key={b.id}>
+                              {/* the window this cut splices into */}
+                              <span
+                                className="pointer-events-none absolute inset-y-0 z-[1] rounded-full"
+                                style={{
+                                  left: `${startPct}%`,
+                                  width: `${widthPct}%`,
+                                  background: isSel ? `${b.color}55` : "rgba(255,255,255,0.06)",
+                                  boxShadow: `inset 0 0 0 ${isSel ? 2 : 1}px ${isSel ? b.color : "rgba(255,255,255,0.18)"}`,
+                                }}
+                              />
+                              {/* flag pinned at the anchor — click to play that cut */}
+                              <span
+                                role="button"
+                                tabIndex={0}
+                                title={`${b.name} · ${fmt(aStart)}`}
+                                onClick={(e) => { e.stopPropagation(); setSelectedBrandId(b.id); }}
+                                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setSelectedBrandId(b.id); } }}
+                                className="group/ad absolute -top-1.5 bottom-0 z-[2] flex w-3.5 -translate-x-1/2 cursor-pointer justify-center"
+                                style={{ left: `${startPct}%` }}
+                              >
+                                <span className="absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 rounded-full" style={{ background: isSel ? "#fff" : b.color, opacity: isSel ? 1 : 0.55 }} />
+                                <span className="absolute -top-1.5 left-1/2 -translate-x-1/2 rounded-md px-1.5 py-px text-[8px] font-bold leading-tight tracking-wide text-white" style={{ background: b.color, opacity: isSel ? 1 : 0.7 }}>
+                                  {i + 1}
+                                </span>
+                                <span className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-chalk px-2 py-1 text-[10px] font-bold text-ink opacity-0 shadow-lg transition-opacity duration-150 group-hover/ad:opacity-100">
+                                  {b.name} · <span className="tabular text-coral">{fmt(aStart)}</span>
+                                </span>
                               </span>
                             </span>
-                          </>
-                        );
-                      })()}
+                          );
+                        })}
 
                       <span className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-coral bg-chalk opacity-0 shadow transition-opacity group-hover:opacity-100" style={{ left: `${progress * 100}%` }} />
                     </button>
@@ -473,11 +540,92 @@ export function Previews({
                 index={i}
                 selected={b.id === selectedBrand.id}
                 job={displayJobs[b.id]}
-                frameUrl={analysis.frame.url}
+                frameUrl={momentFor(i).frame.url}
+                momentTime={momentFor(i).timestamp}
                 onSelect={() => setSelectedBrandId(b.id)}
               />
             </motion.div>
           ))}
+
+          {/* ── Nano Banana design files (click to enlarge) ── */}
+          {(styleFile || Object.keys(brandFiles).length > 0) && (
+            <div className="mt-1 rounded-2xl border-2 border-line-2 bg-ink-2 p-3">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-fog-2">
+                🍌 Design files · Nano Banana
+              </span>
+              <div className="mt-2.5 grid grid-cols-3 gap-2">
+                {styleFile && (
+                  <DesignThumb url={styleFile} label="Style plate" onOpen={setLightbox} />
+                )}
+                {brands.map((b) =>
+                  brandFiles[b.id] ? (
+                    <DesignThumb key={b.id} url={brandFiles[b.id]} label={b.name} onOpen={setLightbox} />
+                  ) : null
+                )}
+              </div>
+              <p className="mt-2 text-[10px] font-medium leading-snug text-fog-2">
+                These are fed to the video model as reference images — the product/logo lives here, not in the splice frame.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {lightbox && <DesignLightbox {...lightbox} onClose={() => setLightbox(null)} />}
+    </div>
+  );
+}
+
+/* ---- a single design-file thumbnail (opens the lightbox) ---- */
+function DesignThumb({
+  url, label, onOpen,
+}: {
+  url: string;
+  label: string;
+  onOpen: (v: { url: string; label: string }) => void;
+}) {
+  return (
+    <button
+      onClick={() => onOpen({ url, label })}
+      title={`${label} — click to enlarge`}
+      className="ring-focus group/df overflow-hidden rounded-xl border-2 border-line-2 bg-ink-3 text-left"
+    >
+      <div className="relative aspect-square w-full overflow-hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt={label} className="h-full w-full object-cover transition-transform group-hover/df:scale-105" />
+      </div>
+      <span className="block truncate px-1.5 py-1 text-[9px] font-bold text-fog">{label}</span>
+    </button>
+  );
+}
+
+/* ---- full-size design-file viewer ---- */
+function DesignLightbox({
+  url, label, onClose,
+}: {
+  url: string;
+  label: string;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-[100] grid place-items-center bg-black/80 p-6 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${label} design file`}
+    >
+      <div className="flex max-h-full max-w-3xl flex-col items-center gap-3" onClick={(e) => e.stopPropagation()}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt={label} className="max-h-[78vh] w-auto rounded-2xl border-2 border-line-2 object-contain" />
+        <div className="flex items-center gap-3">
+          <span className="rounded-full bg-ink-2 px-3 py-1 text-[12px] font-bold text-chalk">{label}</span>
+          <a href={url} download={`${label.replace(/\s+/g, "-").toLowerCase()}.png`} className="ring-focus rounded-full bg-coral px-3 py-1 text-[12px] font-bold text-white">
+            Download
+          </a>
+          <button onClick={onClose} className="ring-focus rounded-full border-2 border-line-2 bg-ink-2 px-3 py-1 text-[12px] font-bold text-fog hover:text-chalk">
+            Close
+          </button>
         </div>
       </div>
     </div>
@@ -486,13 +634,15 @@ export function Previews({
 
 /* ---- one native-ad card in the side rail ---- */
 function AdSideCard({
-  brand, index, selected, job, frameUrl, onSelect,
+  brand, index, selected, job, frameUrl, momentTime, onSelect,
 }: {
   brand: Brand;
   index: number;
   selected: boolean;
   job?: JobState;
   frameUrl: string;
+  /** the source timestamp this cut splices into */
+  momentTime: number;
   onSelect: () => void;
 }) {
   const generated = job?.job?.videoUrl ?? null;
@@ -525,7 +675,7 @@ function AdSideCard({
         {job && !(job.pending && !generated) && <GenStatusPill state={job} compact />}
 
         <span className="pointer-events-none absolute left-2 top-2 rounded-full bg-ink-2/95 px-2 py-0.5 text-[9px] font-bold text-chalk backdrop-blur">
-          Cut {index + 1}
+          Cut {index + 1} · <span className="tabular text-coral">{fmt(momentTime)}</span>
         </span>
 
         {selected && (
