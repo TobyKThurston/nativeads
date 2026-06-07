@@ -1,11 +1,13 @@
 /**
  * GET /api/generate/[id] — poll a generation job.
+ *   veo:<opName>    → query Veo operation for status + video url
  *   kling:<taskId>  → query Kling for status + video url
  *   mock:<token>    → derive progress from elapsed time encoded in the token
  */
 
 import { statusProgress, type GenStatus, type GenerationJob } from "@/lib/generation";
 import { queryImage2Video, KlingApiError } from "@/lib/providers/kling";
+import { queryVideo, VeoApiError } from "@/lib/providers/veo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,6 +39,18 @@ function pollMock(token: string): GenerationJob {
   };
 }
 
+async function pollVeo(opName: string): Promise<GenerationJob> {
+  const { status, videoUrl, message } = await queryVideo(opName);
+  return {
+    id: `veo:${opName}`,
+    provider: "veo",
+    status,
+    progress: status === "processing" && videoUrl ? 0.9 : statusProgress(status),
+    videoUrl,
+    message,
+  };
+}
+
 async function pollKling(taskId: string): Promise<GenerationJob> {
   const { status, videoUrl, message } = await queryImage2Video(taskId);
   return {
@@ -56,6 +70,16 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
   const ref = sep === -1 ? "" : id.slice(sep + 1);
 
   if (provider === "mock") return Response.json({ job: pollMock(ref) });
+
+  if (provider === "veo") {
+    try {
+      return Response.json({ job: await pollVeo(ref) });
+    } catch (err) {
+      const message = err instanceof VeoApiError ? err.message : "poll failed";
+      const status = err instanceof VeoApiError ? err.status ?? 502 : 500;
+      return Response.json({ error: message }, { status });
+    }
+  }
 
   if (provider === "kling") {
     try {

@@ -7,7 +7,9 @@
 
 import {
   buildKlingRequest,
+  buildVeoRequest,
   redactKlingRequest,
+  redactVeoRequest,
   statusProgress,
   type GenerationJob,
   type GenerationSpec,
@@ -18,6 +20,8 @@ import {
   klingConfig,
   KlingApiError,
 } from "@/lib/providers/kling";
+import { createVideo, isVeoConfigured, VeoApiError } from "@/lib/providers/veo";
+import { videoProvider, VEO_MODEL } from "@/lib/config";
 import { authorKlingPrompt } from "@/lib/promptAuthor";
 
 export const runtime = "nodejs"; // node:crypto for JWT signing
@@ -70,44 +74,74 @@ export async function POST(request: Request) {
     durationSec: spec.durationSec,
   });
 
-  // Build the real Kling request either way — env overrides on a configured
-  // account, defaults otherwise — so the inspector shows exactly what we'd send.
-  const cfg = isKlingConfigured() ? klingConfig() : null;
-  const klingReq = buildKlingRequest(spec, {
-    ...(cfg ? { model_name: cfg.model, mode: cfg.mode, cfg_scale: cfg.cfgScale } : {}),
-    ...(authored ?? {}),
-  });
-  const redacted = redactKlingRequest(klingReq);
+  // Choose the video provider: honor VIDEO_PROVIDER, then fall back to whichever
+  // is actually configured; mock when neither is.
+  const preferred = videoProvider();
+  const veoReady = isVeoConfigured();
+  const klingReady = isKlingConfigured();
+  const useVeo = veoReady && (preferred === "veo" || !klingReady);
+  const useKling = !useVeo && klingReady;
 
-  if (!cfg) {
-    // Mock: no key — simulate a job whose progress derives purely from elapsed time.
-    const simMs = 8000 + spec.durationSec * 600;
-    const job: GenerationJob = {
-      id: `mock:${mockToken(simMs)}`,
-      provider: "mock",
-      status: "queued",
-      progress: statusProgress("queued"),
-      videoUrl: null,
-      message: "Kling not configured — simulating. Showing composited preview.",
-      request: redacted,
-    };
-    return Response.json({ job });
+  // ── Veo (default) ──
+  if (useVeo) {
+    const veoReq = buildVeoRequest(spec, { model: VEO_MODEL, ...(authored ?? {}) });
+    try {
+      const { taskId, status } = await createVideo(veoReq);
+      const job: GenerationJob = {
+        id: `veo:${taskId}`,
+        provider: "veo",
+        status,
+        progress: statusProgress(status),
+        videoUrl: null,
+        request: redactVeoRequest(veoReq),
+      };
+      return Response.json({ job });
+    } catch (err) {
+      const message = err instanceof VeoApiError ? err.message : "generation failed";
+      const status = err instanceof VeoApiError ? err.status ?? 502 : 500;
+      return Response.json({ error: message }, { status });
+    }
   }
 
-  try {
-    const { taskId, status } = await createImage2Video(klingReq);
-    const job: GenerationJob = {
-      id: `kling:${taskId}`,
-      provider: "kling",
-      status,
-      progress: statusProgress(status),
-      videoUrl: null,
-      request: redacted,
-    };
-    return Response.json({ job });
-  } catch (err) {
-    const message = err instanceof KlingApiError ? err.message : "generation failed";
-    const status = err instanceof KlingApiError ? err.status ?? 502 : 500;
-    return Response.json({ error: message }, { status });
+  // ── Kling (fallback) ──
+  if (useKling) {
+    const cfg = klingConfig();
+    const klingReq = buildKlingRequest(spec, {
+      model_name: cfg.model,
+      mode: cfg.mode,
+      cfg_scale: cfg.cfgScale,
+      ...(authored ?? {}),
+    });
+    try {
+      const { taskId, status } = await createImage2Video(klingReq);
+      const job: GenerationJob = {
+        id: `kling:${taskId}`,
+        provider: "kling",
+        status,
+        progress: statusProgress(status),
+        videoUrl: null,
+        request: redactKlingRequest(klingReq),
+      };
+      return Response.json({ job });
+    } catch (err) {
+      const message = err instanceof KlingApiError ? err.message : "generation failed";
+      const status = err instanceof KlingApiError ? err.status ?? 502 : 500;
+      return Response.json({ error: message }, { status });
+    }
   }
+
+  // ── Mock: no provider configured — simulate a job whose progress derives
+  // purely from elapsed time. Echo the would-be (default-provider) request.
+  const simMs = 8000 + spec.durationSec * 600;
+  const mockReq = redactVeoRequest(buildVeoRequest(spec, { model: VEO_MODEL, ...(authored ?? {}) }));
+  const job: GenerationJob = {
+    id: `mock:${mockToken(simMs)}`,
+    provider: "mock",
+    status: "queued",
+    progress: statusProgress("queued"),
+    videoUrl: null,
+    message: "No video provider configured — simulating. Showing composited preview.",
+    request: mockReq,
+  };
+  return Response.json({ job });
 }

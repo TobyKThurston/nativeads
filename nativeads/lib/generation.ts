@@ -123,8 +123,8 @@ export type GenerationJob = {
   progress: number; // 0..1
   videoUrl: string | null;
   message?: string;
-  /** redacted echo of the Kling request, for the UI inspector */
-  request?: KlingRequest;
+  /** redacted echo of the provider request, for the UI inspector */
+  request?: KlingRequest | VeoRequest;
 };
 
 /**
@@ -243,4 +243,43 @@ export function redactKlingRequest(req: KlingRequest): KlingRequest {
   const note = (s: string) =>
     s.startsWith("http") ? s : `<base64 frame · ~${Math.round((s.length * 0.75) / 1024)} KB>`;
   return { ...req, image: note(req.image), image_tail: "<same as image · seamless first=last frame>" };
+}
+
+/**
+ * Build the Veo request. `image` and `last_image` are the SAME clean source
+ * frame (seamless splice); the product/logo enters via `reference_images` (the
+ * design files) + prompt — never the anchor pixels. Prompt comes from the
+ * GPT-authored pair when provided, else the buildPrompt template.
+ */
+export function buildVeoRequest(
+  spec: GenerationSpec,
+  opts: { model?: string; prompt?: string; negative_prompt?: string } = {}
+): VeoRequest {
+  const { prompt, negative_prompt } =
+    opts.prompt && opts.negative_prompt
+      ? { prompt: opts.prompt, negative_prompt: opts.negative_prompt }
+      : buildPrompt(spec);
+  const frame = toImagePayload(spec.frame);
+  return {
+    model: opts.model ?? "veo-3.1-generate-preview",
+    prompt,
+    negative_prompt,
+    image: frame,
+    last_image: frame, // seamless: last frame === first frame
+    reference_images: (spec.referenceImages ?? []).map((r) => r.url),
+  };
+}
+
+/** Redact the heavy base64 frames + reference images for the UI inspector. */
+export function redactVeoRequest(req: VeoRequest): VeoRequest {
+  const kb = (s: string) => Math.round((s.length * 0.75) / 1024);
+  const note = (s: string) => (s.startsWith("http") ? s : `<base64 frame · ~${kb(s)} KB>`);
+  return {
+    ...req,
+    image: note(req.image),
+    last_image: "<same as image · seamless first=last frame>",
+    reference_images: req.reference_images.map((r, i) =>
+      r.startsWith("http") ? r : `<ref ${i} · ~${kb(r)} KB>`
+    ),
+  };
 }
