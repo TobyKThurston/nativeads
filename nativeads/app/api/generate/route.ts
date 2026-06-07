@@ -31,6 +31,9 @@ function badRequest(message: string) {
 function isValidSpec(s: unknown): s is GenerationSpec {
   if (!s || typeof s !== "object") return false;
   const v = s as Record<string, unknown>;
+  // New optional fields (Subtask 1): tolerate absence; reject only wrong shapes.
+  if (v.referenceImages !== undefined && !Array.isArray(v.referenceImages)) return false;
+  if (v.transcriptContext !== undefined && typeof v.transcriptContext !== "string") return false;
   return (
     typeof v.frame === "string" &&
     (v.frame.startsWith("data:") || v.frame.startsWith("http")) &&

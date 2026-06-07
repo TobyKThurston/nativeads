@@ -42,6 +42,12 @@ export type AnalysisResult = {
   rationale?: string;
   /** GPT's short description of what's in the frame; fed to Kling as ad context. */
   scene?: string;
+  /**
+   * Dialogue/context near `timestamp`, produced by the Whisper transcript layer
+   * (§3 seam). That layer is the producer; the generation flow is the consumer.
+   * Undefined until populated — a no-op for the rest of the pipeline.
+   */
+  transcript?: string;
 };
 
 // ---- math helpers ----

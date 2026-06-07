@@ -24,6 +24,17 @@ export type GenSurface = {
   h: number;
 };
 
+/**
+ * A design-file reference image handed to the video model alongside the clean
+ * source frame. The product/logo lives HERE (and in the prompt), never in the
+ * anchor frame — so the first === last splice invariant is preserved. See §2/§4.
+ */
+export type ReferenceImage = {
+  kind: "brand" | "style" | "logo";
+  /** data URL or http URL */
+  url: string;
+};
+
 /** Everything needed to generate one native cut. Sent to POST /api/generate. */
 export type GenerationSpec = {
   brand: Brand;
@@ -42,6 +53,17 @@ export type GenerationSpec = {
    * seamless splice. Absent on the heuristic path.
    */
   sceneContext?: string;
+  /**
+   * Design-file references (brand, optional style) for the video model. The
+   * product/logo enters the clip through these, not the anchor pixels. §2/§4.
+   */
+  referenceImages?: ReferenceImage[];
+  /**
+   * Windowed dialogue/context near `timestamp`, produced by the Whisper layer
+   * and copied from AnalysisResult.transcript at spec-build time. §3 seam — a
+   * no-op until populated.
+   */
+  transcriptContext?: string;
 };
 
 export const DURATIONS = [5, 10] as const;
@@ -58,6 +80,23 @@ export type KlingRequest = {
   prompt: string;
   negative_prompt: string;
   cfg_scale: number;
+};
+
+/**
+ * Provider-agnostic video request for Veo 3.1, sitting beside KlingRequest.
+ * `image` and `last_image` are the SAME clean source frame (seamless splice);
+ * the product/logo arrives via `reference_images` + prompt. See Subtask 4.
+ */
+export type VeoRequest = {
+  model: string;
+  prompt: string;
+  negative_prompt?: string;
+  /** first frame — bare/encoded clean source frame */
+  image: string;
+  /** last frame — identical to `image` for a seamless splice */
+  last_image: string;
+  /** design-file reference images (brand, [style]) as data/http URLs */
+  reference_images: string[];
 };
 
 export type GenStatus = "queued" | "processing" | "succeeded" | "failed";
@@ -78,8 +117,8 @@ export function statusProgress(status: GenStatus): number {
 
 /** A generation job, as returned by POST /api/generate and GET /api/generate/[id]. */
 export type GenerationJob = {
-  id: string; // "kling:<taskId>" | "mock:<token>"
-  provider: "kling" | "mock";
+  id: string; // "veo:<taskId>" | "kling:<taskId>" | "mock:<token>"
+  provider: "veo" | "kling" | "mock";
   status: GenStatus;
   progress: number; // 0..1
   videoUrl: string | null;
