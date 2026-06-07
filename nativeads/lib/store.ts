@@ -14,7 +14,7 @@
  */
 
 import type { VideoSource } from "./types";
-import type { AnalysisResult } from "./analyze";
+import { hash, type AnalysisResult } from "./analyze";
 import type { StyleId } from "./style";
 
 /** One generated cut, as persisted. `videoUrl` is the provider's clip URL (or
@@ -44,6 +44,8 @@ export type SavedAd = {
 const LS_KEY = "nativeads:gallery:v1";
 const IDB_NAME = "nativeads";
 const IDB_STORE = "media";
+const DESIGN_STORE = "designFiles";
+const IDB_VERSION = 2;
 const SRC_KEY = (id: string) => `src:${id}`;
 
 const isBrowser = () => typeof window !== "undefined";
@@ -104,7 +106,7 @@ export async function deleteAd(id: string): Promise<void> {
   if (!isBrowser()) return;
   writeAll(listAds().filter((a) => a.id !== id));
   try {
-    await idbDelete(SRC_KEY(id));
+    await idbDelete(IDB_STORE, SRC_KEY(id));
   } catch {
     /* blob may not exist (youtube) — fine */
   }
@@ -118,46 +120,47 @@ function openDb(): Promise<IDBDatabase> {
       reject(new Error("IndexedDB unavailable"));
       return;
     }
-    const req = window.indexedDB.open(IDB_NAME, 1);
+    const req = window.indexedDB.open(IDB_NAME, IDB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+      if (!db.objectStoreNames.contains(DESIGN_STORE)) db.createObjectStore(DESIGN_STORE);
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error ?? new Error("idb open failed"));
   });
 }
 
-function idbPut(key: string, value: Blob): Promise<void> {
+function idbPut(store: string, key: IDBValidKey, value: unknown): Promise<void> {
   return openDb().then(
     (db) =>
       new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(IDB_STORE, "readwrite");
-        tx.objectStore(IDB_STORE).put(value, key);
+        const tx = db.transaction(store, "readwrite");
+        tx.objectStore(store).put(value, key);
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error ?? new Error("idb put failed"));
       })
   );
 }
 
-function idbGet(key: string): Promise<Blob | undefined> {
+function idbGet<T>(store: string, key: IDBValidKey): Promise<T | undefined> {
   return openDb().then(
     (db) =>
-      new Promise<Blob | undefined>((resolve, reject) => {
-        const tx = db.transaction(IDB_STORE, "readonly");
-        const req = tx.objectStore(IDB_STORE).get(key);
-        req.onsuccess = () => resolve(req.result as Blob | undefined);
+      new Promise<T | undefined>((resolve, reject) => {
+        const tx = db.transaction(store, "readonly");
+        const req = tx.objectStore(store).get(key);
+        req.onsuccess = () => resolve(req.result as T | undefined);
         req.onerror = () => reject(req.error ?? new Error("idb get failed"));
       })
   );
 }
 
-function idbDelete(key: string): Promise<void> {
+function idbDelete(store: string, key: IDBValidKey): Promise<void> {
   return openDb().then(
     (db) =>
       new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(IDB_STORE, "readwrite");
-        tx.objectStore(IDB_STORE).delete(key);
+        const tx = db.transaction(store, "readwrite");
+        tx.objectStore(store).delete(key);
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error ?? new Error("idb delete failed"));
       })
@@ -166,12 +169,12 @@ function idbDelete(key: string): Promise<void> {
 
 /** Persist the source video bytes for a file-based ad. */
 export function putSourceBlob(id: string, blob: Blob): Promise<void> {
-  return idbPut(SRC_KEY(id), blob);
+  return idbPut(IDB_STORE, SRC_KEY(id), blob);
 }
 
 /** Recover the source video bytes; undefined if never stored (e.g. youtube). */
 export function getSourceBlob(id: string): Promise<Blob | undefined> {
-  return idbGet(SRC_KEY(id));
+  return idbGet<Blob>(IDB_STORE, SRC_KEY(id));
 }
 
 /**
@@ -185,4 +188,76 @@ export async function rehydrateSourceUrl(id: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/* ------------------------------------------------------- design-file cache (§3)
+ * The "database of design files": Nano Banana outputs keyed so the per-video
+ * style file is shared across all three brand branches, and regenerating a brand
+ * is free. Values are small-ish data URLs stored as { url, at } for LRU eviction.
+ */
+
+type DesignRecord = { url: string; at: number };
+
+/**
+ * Stable cache hash over a short, fixed slice of the frame so the same capture
+ * keys identically without hashing megabytes of base64. (FNV-1a, from analyze.)
+ */
+export function frameHash(frame: string): string {
+  const s = frame.length > 2048 ? frame.slice(0, 1024) + frame.slice(-1024) : frame;
+  return hash(s).toString(36);
+}
+
+export const brandFileKey = (brandId: string, styleId: string, frame: string): string =>
+  `bf:${brandId}:${styleId}:${frameHash(frame)}`;
+
+export const styleFileKey = (styleId: string, frame: string): string =>
+  `sf:${styleId}:${frameHash(frame)}`;
+
+/** Look up a cached design file by key; undefined if absent or on any error. */
+export async function getDesignFile(key: string): Promise<string | undefined> {
+  if (!isBrowser()) return undefined;
+  try {
+    const rec = await idbGet<DesignRecord>(DESIGN_STORE, key);
+    return rec?.url;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Cache a design file. On quota error, evict the oldest entries and retry once. */
+export async function putDesignFile(key: string, url: string): Promise<void> {
+  if (!isBrowser()) return;
+  const rec: DesignRecord = { url, at: Date.now() };
+  try {
+    await idbPut(DESIGN_STORE, key, rec);
+  } catch {
+    try {
+      await evictOldestDesignFiles(8);
+      await idbPut(DESIGN_STORE, key, rec);
+    } catch {
+      /* give up — a cache miss just means we regenerate next time */
+    }
+  }
+}
+
+/** Drop the `n` oldest design-file records (by insertion time). Best-effort. */
+async function evictOldestDesignFiles(n: number): Promise<void> {
+  const db = await openDb();
+  const entries = await new Promise<{ key: IDBValidKey; at: number }[]>((resolve, reject) => {
+    const tx = db.transaction(DESIGN_STORE, "readonly");
+    const out: { key: IDBValidKey; at: number }[] = [];
+    const req = tx.objectStore(DESIGN_STORE).openCursor();
+    req.onsuccess = () => {
+      const cur = req.result;
+      if (cur) {
+        out.push({ key: cur.key, at: (cur.value as DesignRecord)?.at ?? 0 });
+        cur.continue();
+      } else {
+        resolve(out);
+      }
+    };
+    req.onerror = () => reject(req.error ?? new Error("idb cursor failed"));
+  });
+  entries.sort((a, b) => a.at - b.at);
+  await Promise.all(entries.slice(0, Math.max(1, n)).map((e) => idbDelete(DESIGN_STORE, e.key)));
 }
