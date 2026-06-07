@@ -9,7 +9,7 @@ const run = promisify(execFile);
 
 /**
  * Format ladder, highest quality first. A single frame needs no audio, so we
- * pull the best VIDEO-ONLY stream — that unlocks 1080p (YouTube only muxes
+ * pull the best VIDEO-ONLY stream - that unlocks 1080p (YouTube only muxes
  * audio+video up to 720p). avc1 (H.264) is preferred first: it decodes fastest
  * and most reliably; vp9/av1 at the same resolution are visually equivalent and
  * serve as the next rung. The muxed ≤720p path is the final, proven fallback so
@@ -24,7 +24,7 @@ const FORMAT_LADDER = [
 /**
  * Resolve `format` to a direct stream URL and grab one frame at `t` as a
  * LOSSLESS PNG (rgb24, no chroma subsampling) at the stream's native
- * resolution — no downscale, no JPEG artifacts. Fast input seek (`-ss` before
+ * resolution - no downscale, no JPEG artifacts. Fast input seek (`-ss` before
  * `-i`) lands on the nearest keyframe, which is also the cleanest possible
  * frame (a full I-frame, free of inter-frame prediction artifacts). Returns the
  * PNG buffer, or null so the caller can try the next rung of the ladder.
@@ -65,7 +65,7 @@ async function grabFrame(url: string, format: string, t: number): Promise<Buffer
 
 /**
  * Extract a REAL frame from a YouTube video at a timestamp (random if omitted).
- * An embedded player is cross-origin, so the browser can't screenshot it — we
+ * An embedded player is cross-origin, so the browser can't screenshot it - we
  * resolve the stream with yt-dlp and grab the frame with ffmpeg, server-side.
  * Returns { ok:false } on any failure so the client can fall back to the thumbnail.
  */
@@ -84,7 +84,7 @@ export async function POST(req: Request) {
   const url = `https://www.youtube.com/watch?v=${id}`;
 
   try {
-    // 1 — duration (so we can pick a sensible random point)
+    // 1 - duration (so we can pick a sensible random point)
     let duration = 0;
     try {
       const { stdout } = await run("yt-dlp", ["--no-warnings", "--no-playlist", "--print", "duration", url], { timeout: 30000 });
@@ -100,7 +100,7 @@ export async function POST(req: Request) {
           ? Math.round((0.1 + Math.random() * 0.8) * duration)
           : 1;
 
-    // 2 — grab the highest-quality frame the format ladder yields (best
+    // 2 - grab the highest-quality frame the format ladder yields (best
     // video-only ≤1080p as a lossless PNG; muxed ≤720p as the last resort).
     let buf: Buffer | null = null;
     for (const format of FORMAT_LADDER) {

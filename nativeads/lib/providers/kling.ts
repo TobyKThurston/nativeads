@@ -1,14 +1,14 @@
 /**
- * Kling provider adapter — SERVER ONLY (imports node:crypto, reads secrets).
+ * Kling provider adapter - SERVER ONLY (imports node:crypto, reads secrets).
  *
  * Routes a built KlingRequest to Kling AI's image-to-video API. The key isn't
  * provisioned yet, so in practice `isKlingConfigured()` is false and the route
- * falls back to mock mode — but this is the real call path, ready the moment
+ * falls back to mock mode - but this is the real call path, ready the moment
  * KLING_ACCESS_KEY / KLING_SECRET_KEY land in the environment.
  *
  * Auth is a short-lived HS256 JWT signed with the secret key (Kling's scheme).
  * Endpoint/model/mode are all env-overridable because the exact values depend
- * on the account's region and plan — confirm against the Kling docs when wiring
+ * on the account's region and plan - confirm against the Kling docs when wiring
  * the live key.
  */
 
@@ -53,7 +53,9 @@ export function klingConfig(): KlingConfig {
     baseUrl: (process.env.KLING_BASE_URL || "https://api-singapore.klingai.com").replace(/\/+$/, ""),
     model: process.env.KLING_MODEL || "kling-v3",
     mode,
-    cfgScale: Number.isFinite(cfgScale) ? cfgScale : 0.5,
+    // 0.7 (not Kling's 0.5 default): higher cfg_scale = stricter prompt adherence,
+    // so Kling actually renders the product/logo the prompt asks for. Env-overridable.
+    cfgScale: Number.isFinite(cfgScale) ? cfgScale : 0.7,
   };
 }
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PlayPaste — paste a YouTube link, hit play</title>
+  <title>PlayPaste - paste a YouTube link, hit play</title>
   <style>
     :root {
       --bg: #0b0b0f;
@@ -238,7 +238,7 @@
     <header>
       <div class="badge"><span class="dot"></span> Paste &amp; play</div>
       <h1>Paste a <span class="grad">YouTube</span> link.<br />It just plays.</h1>
-      <p class="sub">Drop any YouTube URL below — full videos, shorts, share links, timestamps. Hit play and watch instantly.</p>
+      <p class="sub">Drop any YouTube URL below - full videos, shorts, share links, timestamps. Hit play and watch instantly.</p>
     </header>
 
     <form id="form" autocomplete="off">
@@ -341,7 +341,7 @@
       const params = new URLSearchParams({ autoplay: '1', rel: '0', modestbranding: '1' });
       if (video.start > 0) params.set('start', String(video.start));
       // YouTube refuses to configure the player (Error 153) without a valid
-      // web origin — present over http(s), absent on file:// which is the usual cause.
+      // web origin - present over http(s), absent on file:// which is the usual cause.
       if (location.protocol === 'http:' || location.protocol === 'https:') {
         params.set('origin', location.origin);
       }

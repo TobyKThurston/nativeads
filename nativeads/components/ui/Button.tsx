@@ -10,12 +10,12 @@ const VARIANTS: Record<Variant, { className: string; style: CSSProperties }> = {
     className: "bg-coral text-white",
     style: { ["--pop" as string]: "rgba(180,58,18,0.95)" },
   },
-  // ink, cream text — the confident CTA (like the reference "Generate")
+  // ink, cream text - the confident CTA (like the reference "Generate")
   dark: {
     className: "bg-chalk text-ink",
     style: { ["--pop" as string]: "rgba(0,0,0,0.32)" },
   },
-  // soft white pill with a hairline — secondary actions
+  // soft white pill with a hairline - secondary actions
   ghost: {
     className: "bg-ink-2 text-chalk border-2 border-line-2",
     style: { ["--pop" as string]: "rgba(40,33,22,0.18)" },

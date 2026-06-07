@@ -5,7 +5,7 @@ import type { SavedAd } from "@/lib/store";
 import { brandById } from "@/lib/brands";
 import { styleById } from "@/lib/style";
 
-/** "3m ago" / "2h ago" / "Apr 12" — compact, demo-grade relative time. */
+/** "3m ago" / "2h ago" / "Apr 12" - compact, demo-grade relative time. */
 function ago(ts: number): string {
   const s = Math.max(0, (Date.now() - ts) / 1000);
   if (s < 60) return "just now";
@@ -16,7 +16,7 @@ function ago(ts: number): string {
 }
 
 /**
- * The saved-ads library — a friendly strip at the bottom of the new-ad page
+ * The saved-ads library - a friendly strip at the bottom of the new-ad page
  * (and below a result / a replayed cut).
  */
 export function Gallery({
@@ -30,7 +30,7 @@ export function Gallery({
   onNew: () => void;
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
-  /** hide the "New ad" button — e.g. on the landing page, where the upload
+  /** hide the "New ad" button - e.g. on the landing page, where the upload
    *  hero above is already the new-ad entry point */
   showNew?: boolean;
 }) {
@@ -60,7 +60,7 @@ export function Gallery({
 
       {empty ? (
         <p className="rounded-3xl border-[2.5px] border-dashed border-line-2 bg-ink-2 px-4 py-9 text-center text-[14px] font-semibold text-fog-2">
-          Nothing saved yet — hit “Save to gallery” to keep a render 💾
+          Nothing saved yet - hit “Save to gallery” to keep a render 💾
         </p>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

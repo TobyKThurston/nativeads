@@ -1,14 +1,14 @@
 @import "tailwindcss";
 
 /* ----------------------------------------------------------------------------
-   NativeAds — "the native-ad factory"
+   NativeAds - "the native-ad factory"
    Warm paper, confetti sprinkles, chunky rounded type, bubbly cartoony buttons.
    Token names are inherited from the old dark theme but REMAPPED to light values
    (ink = paper, chalk = ink text, lime = coral accent) so every component that
    uses the semantic tokens adopts the new look automatically.
 ---------------------------------------------------------------------------- */
 @theme {
-  /* surfaces — "ink*" used to be dark; now they're warm paper + cards */
+  /* surfaces - "ink*" used to be dark; now they're warm paper + cards */
   --color-ink: #f6f1e4;   /* page paper */
   --color-ink-2: #fffdf7; /* card / panel */
   --color-ink-3: #efe7d4; /* inset / track / wells */
@@ -17,12 +17,12 @@
   --color-line: rgba(40, 33, 22, 0.1);
   --color-line-2: rgba(40, 33, 22, 0.16);
 
-  /* text — "chalk" used to be near-white; now warm near-black */
+  /* text - "chalk" used to be near-white; now warm near-black */
   --color-chalk: #221d15;
   --color-fog: #897f6b;   /* muted body */
   --color-fog-2: #b3a88f; /* faint captions */
 
-  /* primary accent — "lime" → coral. brand-pop palette doubles as confetti. */
+  /* primary accent - "lime" → coral. brand-pop palette doubles as confetti. */
   --color-lime: #ff6a3d;
   --color-lime-dim: #e8521f;
 
@@ -47,7 +47,7 @@
 }
 
 /* Only html carries the page colour (the canvas). Body stays transparent so the
-   fixed -z-10 backdrop layers — speckle + confetti — show through behind content. */
+   fixed -z-10 backdrop layers - speckle + confetti - show through behind content. */
 html {
   background-color: var(--color-ink);
 }

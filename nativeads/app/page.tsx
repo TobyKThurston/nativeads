@@ -23,7 +23,7 @@ type View = "create" | "view";
 
 export default function Home() {
   // Home IS the new-ad page (the create-flow landing). The saved-ads gallery
-  // lives at the bottom of it — no separate gallery page.
+  // lives at the bottom of it - no separate gallery page.
   const [view, setView] = useState<View>("create");
 
   // ---- create-flow state ----

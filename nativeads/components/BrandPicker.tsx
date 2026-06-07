@@ -31,7 +31,7 @@ export function BrandPicker({
         Pick three brands to drop in.
       </h2>
       <p className="mx-auto mt-3 max-w-md text-[16px] font-medium text-fog">
-        Each one becomes its own native cut — same scene, three placements.
+        Each one becomes its own native cut - same scene, three placements.
       </p>
 
       {/* progress */}
@@ -110,7 +110,7 @@ export function BrandPicker({
           Make {MAX} cuts <ArrowRight />
         </Button>
         <span className="text-[14px] font-bold text-fog-2">
-          {full ? "Looks great — let's go! 🎉" : `Pick ${MAX - selected.length} more`}
+          {full ? "Looks great - let's go! 🎉" : `Pick ${MAX - selected.length} more`}
         </span>
       </div>
     </div>

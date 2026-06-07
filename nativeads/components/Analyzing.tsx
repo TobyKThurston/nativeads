@@ -15,7 +15,7 @@ import { requestGptDetection, fetchYouTubeFrame } from "@/lib/detect";
 import { youtubeThumb, youtubeThumbFallback, youtubeEmbed } from "@/lib/youtube";
 import { Button, ArrowRight } from "./ui/Button";
 
-const LIME = "#ff6a3d"; // coral — kept the name to minimise churn
+const LIME = "#ff6a3d"; // coral - kept the name to minimise churn
 const CYAN = "#2fa8e6"; // sky
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -35,7 +35,7 @@ export function Analyzing({
   useEffect(() => {
     const signal = { cancelled: false };
     (async () => {
-      // 1 — grab a single REAL frame at a random point
+      // 1 - grab a single REAL frame at a random point
       let cap = { image: "", t: 0, duration: 0, aspect: 16 / 9 };
       let thumb = "";
       try {
@@ -59,7 +59,7 @@ export function Analyzing({
       setT(cap.t);
       setPhase("thinking");
 
-      // 2 — ask GPT vision; fall back to local heuristic
+      // 2 - ask GPT vision; fall back to local heuristic
       const tStart = performance.now();
       let res = await requestGptDetection(cap.image, { timestamp: cap.t, duration: cap.duration, aspect: cap.aspect });
       if (!res) {
@@ -245,7 +245,7 @@ export function Analyzing({
                 </div>
                 {result?.source === "heuristic" && (
                   <p className="mt-3 rounded-xl bg-sun/15 px-3 py-2 text-[12px] font-semibold leading-relaxed text-[#b8841f]">
-                    No OPENAI_API_KEY — ran the local heuristic. Add a key in .env.local to use GPT vision.
+                    No OPENAI_API_KEY - ran the local heuristic. Add a key in .env.local to use GPT vision.
                   </p>
                 )}
               </div>

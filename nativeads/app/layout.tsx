@@ -9,9 +9,9 @@ const nunito = Nunito({ variable: "--font-nunito", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "NativeAds — the native-ad factory",
+  title: "NativeAds - the native-ad factory",
   description:
-    "Drop in a video. We find the best spot and render three fun, native ad cuts — automatically.",
+    "Drop in a video. We find the best spot and render three fun, native ad cuts - automatically.",
 };
 
 export default function RootLayout({

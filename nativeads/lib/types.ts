@@ -37,7 +37,7 @@ export type Brand = {
   /**
    * Real product image (transparent PNG under /public/products/<id>.png).
    * When set, we composite these *actual pixels* into the start frame instead
-   * of asking Kling to invent the product — that's what keeps the logo legible
+   * of asking Kling to invent the product - that's what keeps the logo legible
    * (a text-to-video model can't spell a wordmark). Optional: brands without an
    * asset fall back to text-only generation.
    */

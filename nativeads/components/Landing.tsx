@@ -56,7 +56,7 @@ export function Landing({ onSubmit }: { onSubmit: (s: VideoSource) => void }) {
         custom={2} variants={pop} initial="hidden" animate="show"
         className="mt-6 max-w-md text-[17px] font-medium leading-relaxed text-fog"
       >
-        One clip in, three native cuts out — each brand rendered right into the real
+        One clip in, three native cuts out - each brand rendered right into the real
         frame. No editing suite, no green screen.
       </motion.p>
 

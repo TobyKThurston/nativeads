@@ -43,7 +43,7 @@ export function Branching({
           One source, three timelines.
         </h2>
         <p className="mx-auto mt-3 max-w-md text-[16px] font-medium text-fog">
-          Forking the master into personalized renders — each brand on its own track.
+          Forking the master into personalized renders - each brand on its own track.
         </p>
       </div>
 

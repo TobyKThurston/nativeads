@@ -10,7 +10,7 @@ import { STYLES, inferStyle, type StyleId } from "@/lib/style";
 import type { GenerationSpec } from "@/lib/generation";
 import type { SavedClip } from "@/lib/store";
 
-/** Generated clip length, in seconds — the window the native ad splices into. */
+/** Generated clip length, in seconds - the window the native ad splices into. */
 const AD_LEN = 5 as const;
 
 /**
@@ -113,7 +113,7 @@ export function Previews({
         brand: b,
         surface: { id: surface.id, label: surface.label, x: surface.x, y: surface.y, w: surface.w, h: surface.h },
         styleId,
-        // The captured moment is BOTH first and last frame — the splice points.
+        // The captured moment is BOTH first and last frame - the splice points.
         // It must stay the *real* source frame (never a composited product) so the
         // clip loops seamlessly back into the original footage. The brand is fed to
         // Kling via the prompt + scene context instead (see buildPrompt).
@@ -354,7 +354,7 @@ export function Previews({
                   // the splice auto-sequences source → ad → source; no scrubbing.
                   <span className="flex flex-1 items-center gap-2 text-[13px] font-semibold text-fog">
                     <span className="h-2 w-2 animate-pulse rounded-full bg-coral" />
-                    Native ad splices in at <span className="font-bold tabular text-coral">{fmt(startAt)}</span>, then loops back to source — seamless.
+                    Native ad splices in at <span className="font-bold tabular text-coral">{fmt(startAt)}</span>, then loops back to source - seamless.
                   </span>
                 ) : (
                   <>
@@ -380,7 +380,7 @@ export function Previews({
                               className="pointer-events-none absolute inset-y-0 z-[1] rounded-full bg-sun/30 ring-2 ring-inset ring-sun/60"
                               style={{ left: `${startPct}%`, width: `${widthPct}%` }}
                             />
-                            {/* flag pinned at the anchor — visible even over the played fill */}
+                            {/* flag pinned at the anchor - visible even over the played fill */}
                             <span
                               className="group/ad absolute -top-1.5 bottom-0 z-[2] flex w-3.5 -translate-x-1/2 cursor-pointer justify-center"
                               style={{ left: `${startPct}%` }}
@@ -541,7 +541,7 @@ function GenStatusPill({ state, compact = false }: { state: JobState; compact?: 
         ? `Rendering ${pct}%`
         : status === "succeeded"
           ? job?.provider === "mock" ? "Mock · Kling-ready" : "Done"
-          : "—";
+          : "-";
   return (
     <div className="pointer-events-none absolute right-2 top-2 flex flex-col items-end gap-1">
       <span
@@ -621,7 +621,7 @@ function KlingLoader({ state, color, compact = false }: { state: JobState; color
    Two stacked <video>s. We play a short pre-roll of the source up to the anchor,
    hard-cut to the generated insert (its first frame === the source frame there),
    and when the insert ends, return to the source at the anchor and play a short
-   post-roll — then loop. The cuts are invisible because both ends are the same
+   post-roll - then loop. The cuts are invisible because both ends are the same
    frame, which is exactly the "returns to the video normally" effect. */
 const PRE_ROLL = 2.5; // seconds of source shown before the insert
 const POST_ROLL = 2.5; // seconds of source shown after the insert
@@ -661,10 +661,14 @@ function SplicePreview({
     };
     const toAd = () => {
       phaseRef.current = "ad";
-      setShowAd(true);
+      // Don't reveal the ad yet. The source frame at `at` (which equals the ad's
+      // first frame) stays on screen until the clip is ACTUALLY rolling - see
+      // onAdPlaying. Flipping opacity before the remote clip has buffered/decoded
+      // is what produced the long frozen beat at the cut. `ad.currentTime` is
+      // already 0 (pre-seeked in toPre), so we don't re-seek and re-stall here.
       try { src.pause(); } catch {}
-      try { ad.currentTime = 0; } catch {}
-      playActive(ad);
+      if (pausedRef.current) return; // paused on the seam; resume handler starts the ad
+      ad.play().catch(() => { if (phaseRef.current === "ad") toPost(); }); // can't play → skip, don't freeze
     };
     const toPost = () => {
       phaseRef.current = "post";
@@ -674,8 +678,14 @@ function SplicePreview({
       playActive(src);
     };
 
+    // Reveal the ad only once it's truly producing frames. `playing` fires when
+    // playback begins after any buffering/seek delay - exactly when the swap is
+    // safe. Until then the matching source frame holds underneath, so the cut is
+    // seamless instead of a pause-then-jump.
+    const onAdPlaying = () => { if (phaseRef.current === "ad") setShowAd(true); };
     const onAdEnded = () => { if (phaseRef.current === "ad") toPost(); };
     const onAdError = () => { if (phaseRef.current === "ad") toPost(); }; // clip URL failed → don't freeze
+    ad.addEventListener("playing", onAdPlaying);
     ad.addEventListener("ended", onAdEnded);
     ad.addEventListener("error", onAdError);
 
@@ -694,6 +704,7 @@ function SplicePreview({
 
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      ad.removeEventListener("playing", onAdPlaying);
       ad.removeEventListener("ended", onAdEnded);
       ad.removeEventListener("error", onAdError);
       src.removeEventListener("loadedmetadata", begin);
@@ -719,8 +730,8 @@ function SplicePreview({
 
   return (
     <div className="absolute inset-0">
-      <video ref={srcRef} src={srcUrl} muted={muted} playsInline preload="auto" className="absolute inset-0 h-full w-full object-cover" style={{ opacity: showAd ? 0 : 1 }} />
-      <video ref={adRef} src={adUrl} muted={muted} playsInline preload="auto" className="absolute inset-0 h-full w-full object-cover" style={{ opacity: showAd ? 1 : 0 }} />
+      <video ref={srcRef} src={srcUrl} muted={muted} playsInline preload="auto" className="absolute inset-0 h-full w-full object-cover" style={{ opacity: showAd ? 0 : 1, transition: "opacity 180ms linear" }} />
+      <video ref={adRef} src={adUrl} muted={muted} playsInline preload="auto" className="absolute inset-0 h-full w-full object-cover" style={{ opacity: showAd ? 1 : 0, transition: "opacity 180ms linear" }} />
       <span
         className="pointer-events-none absolute bottom-2 left-2 rounded-full bg-ink-2/95 px-2.5 py-1 text-[10px] font-bold backdrop-blur transition-colors"
         style={{ color: showAd ? "var(--color-coral)" : "var(--color-fog)" }}

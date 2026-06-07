@@ -1,12 +1,12 @@
 /**
- * Saved-ad persistence — the gallery's backing store.
+ * Saved-ad persistence - the gallery's backing store.
  *
  * Two tiers, by weight:
  *  - localStorage holds the lightweight record per saved ad: its metadata, the
- *    captured frame (a data URL — doubles as the gallery thumbnail), and the
+ *    captured frame (a data URL - doubles as the gallery thumbnail), and the
  *    generated clip URLs. Synchronous, so the gallery renders instantly.
  *  - IndexedDB holds the heavy bit: the uploaded source video's bytes. A file
- *    source is only ever a `blob:` URL, which dies on reload — so to actually
+ *    source is only ever a `blob:` URL, which dies on reload - so to actually
  *    *replay* a saved ad we stash the blob and mint a fresh object URL on open.
  *    YouTube sources need none of this; their id is enough.
  *
@@ -25,17 +25,17 @@ export type SavedClip = {
   provider?: string;
 };
 
-/** A saved ad project — everything needed to re-render the previews screen. */
+/** A saved ad project - everything needed to re-render the previews screen. */
 export type SavedAd = {
   id: string;
   createdAt: number;
   /** human label (the file name, or "YouTube clip") */
   title: string;
-  /** frame data URL (file) or thumbnail URL (youtube) — the gallery tile image */
+  /** frame data URL (file) or thumbnail URL (youtube) - the gallery tile image */
   thumb: string;
   styleId: StyleId;
   brandIds: string[];
-  /** for a file source, `source.url` is a stale blob URL — rehydrate via getSourceBlob */
+  /** for a file source, `source.url` is a stale blob URL - rehydrate via getSourceBlob */
   source: VideoSource;
   analysis: AnalysisResult;
   clips: SavedClip[];
@@ -80,7 +80,7 @@ function writeAll(ads: SavedAd[]): void {
 
 /**
  * Upsert an ad. localStorage is small (~5MB) and our thumbnails are data URLs,
- * so on a quota error we drop the oldest ad and retry — best-effort, demo-grade.
+ * so on a quota error we drop the oldest ad and retry - best-effort, demo-grade.
  */
 export function saveAd(ad: SavedAd): void {
   if (!isBrowser()) return;
@@ -91,7 +91,7 @@ export function saveAd(ad: SavedAd): void {
       writeAll(ads);
       return;
     } catch {
-      // quota — shed the oldest and try again
+      // quota - shed the oldest and try again
       ads.pop();
     }
   }
@@ -106,7 +106,7 @@ export async function deleteAd(id: string): Promise<void> {
   try {
     await idbDelete(SRC_KEY(id));
   } catch {
-    /* blob may not exist (youtube) — fine */
+    /* blob may not exist (youtube) - fine */
   }
 }
 

@@ -1,5 +1,5 @@
 /**
- * GET /api/generate/[id] — poll a generation job.
+ * GET /api/generate/[id] - poll a generation job.
  *   kling:<taskId>  → query Kling for status + video url
  *   mock:<token>    → derive progress from elapsed time encoded in the token
  */
@@ -29,10 +29,10 @@ function pollMock(token: string): GenerationJob {
     provider: "mock",
     status,
     progress,
-    videoUrl: null, // mock produces no media — the UI keeps showing the composite
+    videoUrl: null, // mock produces no media - the UI keeps showing the composite
     message:
       status === "succeeded"
-        ? "Mock complete — wire KLING_ACCESS_KEY / KLING_SECRET_KEY to render for real."
+        ? "Mock complete - wire KLING_ACCESS_KEY / KLING_SECRET_KEY to render for real."
         : "Simulating Kling render…",
   };
 }

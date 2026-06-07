@@ -1,5 +1,5 @@
 /** Warm paper backdrop: cream base + faint speckle + a few drifting confetti
- *  sprinkles. Deliberately light — no grain, glows or vignette. */
+ *  sprinkles. Deliberately light - no grain, glows or vignette. */
 export function Background() {
   return (
     <>

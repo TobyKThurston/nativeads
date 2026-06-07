@@ -1,5 +1,5 @@
 /**
- * POST /api/generate — create a native-ad generation job for one selected
+ * POST /api/generate - create a native-ad generation job for one selected
  * moment, routed to Kling. When Kling isn't configured we return a transparent
  * mock job (the UI falls back to the composited preview) so the whole flow runs
  * end-to-end without a key.
@@ -67,8 +67,8 @@ export async function POST(request: Request) {
     durationSec: spec.durationSec,
   });
 
-  // Build the real Kling request either way — env overrides on a configured
-  // account, defaults otherwise — so the inspector shows exactly what we'd send.
+  // Build the real Kling request either way - env overrides on a configured
+  // account, defaults otherwise - so the inspector shows exactly what we'd send.
   const cfg = isKlingConfigured() ? klingConfig() : null;
   const klingReq = buildKlingRequest(spec, {
     ...(cfg ? { model_name: cfg.model, mode: cfg.mode, cfg_scale: cfg.cfgScale } : {}),
@@ -77,7 +77,7 @@ export async function POST(request: Request) {
   const redacted = redactKlingRequest(klingReq);
 
   if (!cfg) {
-    // Mock: no key — simulate a job whose progress derives purely from elapsed time.
+    // Mock: no key - simulate a job whose progress derives purely from elapsed time.
     const simMs = 8000 + spec.durationSec * 600;
     const job: GenerationJob = {
       id: `mock:${mockToken(simMs)}`,
@@ -85,7 +85,7 @@ export async function POST(request: Request) {
       status: "queued",
       progress: statusProgress("queued"),
       videoUrl: null,
-      message: "Kling not configured — simulating. Showing composited preview.",
+      message: "Kling not configured - simulating. Showing composited preview.",
       request: redacted,
     };
     return Response.json({ job });

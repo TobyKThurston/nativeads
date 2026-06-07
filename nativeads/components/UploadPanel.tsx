@@ -10,7 +10,7 @@ export function UploadPanel({ onSubmit }: { onSubmit: (s: VideoSource) => void }
   function takeFile(file: File | undefined | null) {
     if (!file) return;
     if (!file.type.startsWith("video/")) {
-      setError("Hmm, that's not a video — try an MP4, MOV or WebM.");
+      setError("Hmm, that's not a video - try an MP4, MOV or WebM.");
       return;
     }
     setError(null);
@@ -48,7 +48,7 @@ export function UploadPanel({ onSubmit }: { onSubmit: (s: VideoSource) => void }
           {dragging ? "Drop it!" : "Drop a video here"}
         </div>
         <div className="text-[14px] text-fog">
-          or <span className="font-bold text-coral underline decoration-coral/40 decoration-2 underline-offset-2">browse your files</span> — MP4, MOV or WebM
+          or <span className="font-bold text-coral underline decoration-coral/40 decoration-2 underline-offset-2">browse your files</span> - MP4, MOV or WebM
         </div>
         <div className="rounded-full bg-ink-3 px-3 py-1 text-[12px] font-semibold text-fog">
           🔒 Runs 100% in your browser

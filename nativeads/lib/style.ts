@@ -2,7 +2,7 @@
  * Scene-style inference.
  *
  * For a native insert to feel native, the generated ad has to be rendered in
- * the *same visual medium* as the host clip — a Coca-Cola can in a Minecraft
+ * the *same visual medium* as the host clip - a Coca-Cola can in a Minecraft
  * video should be blocky voxel cubes, not a photoreal can pasted on top. We
  * can't run a vision classifier here (no model, and the Kling key isn't wired
  * yet), so we infer a best-guess style from cheap signals on the source and
@@ -110,7 +110,7 @@ export const styleById = (id: StyleId): SceneStyle =>
 
 /**
  * Best-guess style from a source. We only have a filename (uploads) or a video
- * id (YouTube) to go on — no title — so detection is keyword-based and falls
+ * id (YouTube) to go on - no title - so detection is keyword-based and falls
  * back to `native`. The UI lets the operator correct it.
  */
 export function inferStyle(hint: string | undefined | null): SceneStyle {
