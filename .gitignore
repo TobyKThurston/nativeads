@@ -1,0 +1,24 @@
+# dependencies
+**/node_modules/
+
+# next.js / build output
+**/.next/
+**/out/
+**/build/
+
+# env / secrets — never commit
+**/.env
+**/.env.*
+!**/.env.example
+
+# typescript
+**/*.tsbuildinfo
+**/next-env.d.ts
+
+# misc / os
+.DS_Store
+*.pem
+*.log
+
+# stray screenshots
+**/--full-page

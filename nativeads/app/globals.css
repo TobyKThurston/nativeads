@@ -1,0 +1,180 @@
+@import "tailwindcss";
+
+/* ----------------------------------------------------------------------------
+   NativeAds — "the native-ad factory"
+   Warm paper, confetti sprinkles, chunky rounded type, bubbly cartoony buttons.
+   Token names are inherited from the old dark theme but REMAPPED to light values
+   (ink = paper, chalk = ink text, lime = coral accent) so every component that
+   uses the semantic tokens adopts the new look automatically.
+---------------------------------------------------------------------------- */
+@theme {
+  /* surfaces — "ink*" used to be dark; now they're warm paper + cards */
+  --color-ink: #f6f1e4;   /* page paper */
+  --color-ink-2: #fffdf7; /* card / panel */
+  --color-ink-3: #efe7d4; /* inset / track / wells */
+
+  /* hairlines */
+  --color-line: rgba(40, 33, 22, 0.1);
+  --color-line-2: rgba(40, 33, 22, 0.16);
+
+  /* text — "chalk" used to be near-white; now warm near-black */
+  --color-chalk: #221d15;
+  --color-fog: #897f6b;   /* muted body */
+  --color-fog-2: #b3a88f; /* faint captions */
+
+  /* primary accent — "lime" → coral. brand-pop palette doubles as confetti. */
+  --color-lime: #ff6a3d;
+  --color-lime-dim: #e8521f;
+
+  --color-coral: #ff6a3d;
+  --color-grape: #8b6bff;
+  --color-sky: #2fa8e6;
+  --color-leaf: #3fbf6a;
+  --color-sun: #ffc43d;
+  --color-cherry: #ff5d77;
+
+  --font-display: var(--font-fredoka), ui-rounded, "Segoe UI Rounded", system-ui, sans-serif;
+  --font-body: var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", monospace;
+}
+
+:root {
+  color-scheme: light;
+}
+
+* {
+  border-color: var(--color-line);
+}
+
+html,
+body {
+  background-color: var(--color-ink);
+  color: var(--color-chalk);
+}
+
+body {
+  font-family: var(--font-body);
+  font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+::selection {
+  background: var(--color-coral);
+  color: #fff;
+}
+
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-ink);
+}
+::-webkit-scrollbar-thumb {
+  background: #d9cfb6;
+  border-radius: 999px;
+  border: 3px solid var(--color-ink);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #cabf9f;
+}
+
+/* ---- Typography helpers ---- */
+.font-display {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.mono {
+  font-family: var(--font-mono);
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Paper texture: a faint warm speckle, replaces the old dot-grid ---- */
+.dot-grid,
+.paper-speckle {
+  background-image: radial-gradient(rgba(40, 33, 22, 0.05) 1.3px, transparent 1.3px);
+  background-size: 22px 22px;
+}
+
+/* ---- Cartoony pressable button: hard offset "shadow" that compresses ----
+   Set --pop (the shadow colour) per variant. The element travels down on press
+   so it feels like a physical, bouncy click. */
+.btn-pop {
+  --pop: rgba(40, 33, 22, 0.22);
+  box-shadow: 0 4px 0 0 var(--pop);
+  transition: transform 0.09s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.09s ease,
+    background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.btn-pop:hover {
+  transform: translateY(-1.5px);
+  box-shadow: 0 5.5px 0 0 var(--pop);
+}
+.btn-pop:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 0 var(--pop);
+}
+.btn-pop:disabled {
+  transform: none;
+  box-shadow: 0 4px 0 0 var(--pop);
+}
+
+/* soft sticker shadow for round / floating elements (play buttons etc.) */
+.glow-lime {
+  box-shadow: 0 4px 0 0 rgba(180, 58, 18, 0.85), 0 8px 18px -6px rgba(255, 106, 61, 0.55);
+}
+
+/* a friendly card lift used on hover */
+.card-pop {
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.18s ease,
+    border-color 0.18s ease;
+}
+.card-pop:hover {
+  transform: translateY(-3px);
+}
+
+.ring-focus:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-ink), 0 0 0 6px var(--color-coral);
+}
+
+/* ---- small motion accents ---- */
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.caret {
+  animation: blink 1s steps(1) infinite;
+}
+
+@keyframes shimmer {
+  100% { transform: translateX(200%); }
+}
+.shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 20%, rgba(40, 33, 22, 0.06) 50%, transparent 80%);
+  transform: translateX(-100%);
+  animation: shimmer 2.4s var(--tw-ease, ease) infinite;
+}
+
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0) rotate(var(--spin, 0deg)); }
+  50% { transform: translateY(-9px) rotate(var(--spin, 0deg)); }
+}
+
+@keyframes wiggle {
+  0%, 100% { transform: rotate(-7deg); }
+  50% { transform: rotate(7deg); }
+}
+
+/* native video chrome: keep the well dark so footage pops */
+video {
+  background: #16130d;
+}
